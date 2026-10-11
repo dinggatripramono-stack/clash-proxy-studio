@@ -149,7 +149,7 @@ async def list_configs():
                     "size_kb": round(stat.st_size / 1024, 2),
                     "mtime": stat.st_mtime,
                     "proxy_count": p_count,
-                    "is_active": norm.lower() == active_path.lower()
+                    "is_active": os.path.normcase(os.path.normpath(norm)) == os.path.normcase(os.path.normpath(active_path))
                 })
             except Exception:
                 pass
@@ -163,10 +163,11 @@ class SelectConfigRequest(BaseModel):
 @app.post("/api/configs/select")
 async def select_config(req: SelectConfigRequest):
     global current_file_path
-    if not os.path.exists(req.path):
-        raise HTTPException(status_code=404, detail=f"File not found: {req.path}")
+    normalized_path = os.path.normpath(req.path)
+    if not os.path.exists(normalized_path):
+        raise HTTPException(status_code=404, detail=f"File not found: {normalized_path}")
 
-    current_file_path = req.path
+    current_file_path = normalized_path
     # Reload mihomo core with this config
     success = False
     error_msg = None
