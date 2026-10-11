@@ -79,6 +79,7 @@ class MihomoManager:
 
         # Stop existing process if running
         self.stop_core()
+        time.sleep(0.2)
 
         test_config = self.generate_isolated_config(source_config_path)
         self.current_config_path = source_config_path
@@ -141,7 +142,28 @@ class MihomoManager:
                     pass
 
             self.process = None
-            self.active = False
+
+        # Purge any zombie process squatting on the controller port
+        if os.name == "nt":
+            try:
+                out = subprocess.check_output(
+                    f'netstat -aon | findstr ":{self.controller_port}" | findstr "LISTENING"',
+                    shell=True,
+                    text=True,
+                    stderr=subprocess.DEVNULL
+                )
+                for line in out.strip().splitlines():
+                    parts = line.strip().split()
+                    if len(parts) >= 5 and parts[-1].isdigit():
+                        subprocess.run(
+                            ["taskkill", "/F", "/PID", parts[-1]],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+            except Exception:
+                pass
+
+        self.active = False
 
     def test_single_proxy(
         self,
