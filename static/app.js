@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnNewConfig = document.getElementById('btnNewConfig');
   const btnImportLinks = document.getElementById('btnImportLinks');
   const btnTestAll = document.getElementById('btnTestAll');
+  const btnCopyLiveLinks = document.getElementById('btnCopyLiveLinks');
   const btnExportLiveOnly = document.getElementById('btnExportLiveOnly');
   const btnAddProxy = document.getElementById('btnAddProxy');
   const btnBulkReplace = document.getElementById('btnBulkReplace');
@@ -181,6 +182,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnExportLiveOnly.addEventListener('click', async () => {
       await handleExportLiveOnly();
+    });
+
+    btnCopyLiveLinks.addEventListener('click', async () => {
+      await handleCopyAllLiveLinks();
     });
 
     btnTestAll.addEventListener('click', () => {
@@ -508,9 +513,14 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
 
           <div class="card-actions">
-            <button class="btn-card-test btn-action-test" data-name="${escapeHtml(name)}">
-              ⚡ Test Ping
-            </button>
+            <div class="card-action-btns">
+              <button class="btn-card-test btn-action-test" data-name="${escapeHtml(name)}">
+                ⚡ Test Ping
+              </button>
+              <button class="btn-card-copy btn-action-copy" data-name="${escapeHtml(name)}" title="Salin link akun (trojan://...) untuk dipaste ke file YAML baru">
+                📋 Copy Link
+              </button>
+            </div>
             <div class="card-icon-actions">
               <button class="btn-icon btn-action-edit" data-name="${escapeHtml(name)}" title="Edit Node">✏️</button>
               <button class="btn-icon btn-action-dup" data-name="${escapeHtml(name)}" title="Duplicate Node">📑</button>
@@ -524,6 +534,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Attach card event listeners
     proxyGrid.querySelectorAll('.btn-action-test').forEach(btn => {
       btn.addEventListener('click', () => testSingleProxy(btn.getAttribute('data-name')));
+    });
+
+    proxyGrid.querySelectorAll('.btn-action-copy').forEach(btn => {
+      btn.addEventListener('click', () => copySingleProxyLink(btn.getAttribute('data-name')));
     });
 
     proxyGrid.querySelectorAll('.btn-action-edit').forEach(btn => {
@@ -635,6 +649,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Enable/disable purge dead & export live buttons
     btnPurgeDead.disabled = deadCount === 0;
     btnExportLiveOnly.disabled = aliveCount === 0;
+    btnCopyLiveLinks.disabled = aliveCount === 0;
   }
 
   // --- NEW CONFIG & BULK IMPORT LOGIC ---
@@ -784,6 +799,60 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast('File Live Only berhasil di-download!', 'success');
     } catch (err) {
       showToast('Error export: ' + err.message, 'error');
+    }
+  }
+
+  // --- COPY RAW PROXY LINKS TO CLIPBOARD ---
+
+  async function copySingleProxyLink(name) {
+    if (!name) return;
+    try {
+      const resp = await fetch('/api/proxies/to-raw-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ names: [name] })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Gagal mengubah proxy ke link');
+
+      if (data.links && data.links.length > 0) {
+        await navigator.clipboard.writeText(data.links[0]);
+        showToast(`📋 Link ${name} berhasil disalin ke clipboard!`, 'success');
+      } else {
+        showToast(`Format proxy ${name} tidak dapat dikonversi ke link`, 'error');
+      }
+    } catch (err) {
+      showToast('Gagal copy link: ' + err.message, 'error');
+    }
+  }
+
+  async function handleCopyAllLiveLinks() {
+    const liveNames = state.proxies
+      .filter(p => state.testResults[p.name] && state.testResults[p.name].alive)
+      .map(p => p.name);
+
+    if (liveNames.length === 0) {
+      showToast('Tidak ada node yang lolos tes (hidup)! Jalankan test ping terlebih dahulu.', 'error');
+      return;
+    }
+
+    try {
+      const resp = await fetch('/api/proxies/to-raw-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ names: liveNames })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Gagal mengambil link aktif');
+
+      if (data.links && data.links.length > 0) {
+        await navigator.clipboard.writeText(data.raw_text);
+        showToast(`📋 ${data.count} Link akun aktif berhasil disalin ke clipboard! Siap dipaste ke config baru.`, 'success');
+      } else {
+        showToast('Tidak ada link aktif yang berhasil dikonversi', 'error');
+      }
+    } catch (err) {
+      showToast('Gagal copy link: ' + err.message, 'error');
     }
   }
 

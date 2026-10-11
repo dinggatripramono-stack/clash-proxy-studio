@@ -570,13 +570,28 @@ async def export_live_only(req: ExportLiveOnlyRequest):
     # Clean groups
     groups = data.get("proxy-groups", [])
     for group in groups:
+        # Rename AUTO-SELECT to DINGGA-SELECT if found
+        if group.get("name") == "AUTO-SELECT":
+            group["name"] = "DINGGA-SELECT"
+
         if "proxies" in group and isinstance(group["proxies"], list):
             # Keep group names like AUTO-BESTPING, but filter node names
             retained = []
             for item in group["proxies"]:
-                if item in ("AUTO-BESTPING", "AUTO-FALLBACK", "LOAD-BALANCE", "MANUAL-LIVE") or item in live_set:
-                    retained.append(item)
+                item_name = "DINGGA-SELECT" if item == "AUTO-SELECT" else item
+                if item_name in ("DINGGA-SELECT", "AUTO-SELECT", "AUTO-BESTPING", "AUTO-FALLBACK", "LOAD-BALANCE", "MANUAL-LIVE") or item_name in live_set:
+                    retained.append(item_name)
             group["proxies"] = retained
+
+    # Update rules to DINGGA-SELECT
+    rules = data.get("rules", [])
+    new_rules = []
+    for r in rules:
+        if "AUTO-SELECT" in r:
+            new_rules.append(r.replace("AUTO-SELECT", "DINGGA-SELECT"))
+        else:
+            new_rules.append(r)
+    data["rules"] = new_rules
 
     clean_yaml = yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
     base_name = os.path.splitext(os.path.basename(active_path))[0]
@@ -587,4 +602,38 @@ async def export_live_only(req: ExportLiveOnlyRequest):
         media_type="application/x-yaml",
         headers={"Content-Disposition": f'attachment; filename="{out_filename}"'}
     )
+
+
+class ToRawLinksRequest(BaseModel):
+    names: Optional[List[str]] = None
+
+
+@app.post("/api/proxies/to-raw-links")
+async def proxies_to_raw_links_endpoint(req: ToRawLinksRequest):
+    active_path = resolve_active_file()
+    if not active_path or not os.path.exists(active_path):
+        raise HTTPException(status_code=404, detail="No active config file found")
+
+    data = yaml_mgr.load_config(active_path)
+    all_proxies = data.get("proxies", [])
+
+    if req.names:
+        target_set = set(req.names)
+        target_proxies = [p for p in all_proxies if p.get("name") in target_set]
+    else:
+        target_proxies = all_proxies
+
+    links = []
+    for p in target_proxies:
+        raw = RawLinkParser.proxy_to_raw_link(p)
+        if raw and not raw.startswith("#"):
+            links.append(raw)
+
+    return {
+        "status": "ok",
+        "count": len(links),
+        "links": links,
+        "raw_text": "\n".join(links)
+    }
+
 

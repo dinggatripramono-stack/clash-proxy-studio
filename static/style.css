@@ -700,39 +700,93 @@ button, .btn-outline {
 .spec-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .spec-label {
-  color: var(--text-dim);
+  color: #94a3b8;
   font-weight: 600;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .spec-val {
-  color: var(--text-main);
+  color: #f1f5f9;
   word-break: break-all;
   text-align: right;
+  font-size: 11.5px;
+  max-width: 72%;
 }
 
 .card-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-top: 4px;
   padding-top: 10px;
   border-top: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.card-action-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .btn-card-test {
   background: rgba(0, 242, 254, 0.12);
   border: 1px solid var(--border-accent);
   color: var(--accent-cyan);
-  font-size: 12px;
-  padding: 6px 14px;
+  font-size: 11.5px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
 }
 .btn-card-test:hover {
   background: rgba(0, 242, 254, 0.22);
+}
+
+.btn-card-copy {
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: #c4b5fd;
+  font-size: 11.5px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s ease;
+  font-family: var(--font-main);
+  font-weight: 600;
+}
+.btn-card-copy:hover {
+  background: rgba(139, 92, 246, 0.25);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+  color: #fff;
+}
+
+.btn-indigo {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: #fff;
+  border: none;
+  font-weight: 700;
+}
+.btn-indigo:hover:not(:disabled) {
+  filter: brightness(1.15);
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.4);
+}
+.btn-indigo:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: grayscale(0.8);
 }
 
 .card-icon-actions {

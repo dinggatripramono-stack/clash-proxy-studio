@@ -251,11 +251,11 @@ class YamlConfigManager:
                 "proxies": [p.get("name") for p in existing_proxies]
             }
             groups.append(lb_group)
-            # Add LOAD-BALANCE to AUTO-SELECT if present
-            auto_select = next((g for g in groups if g.get("name") == "AUTO-SELECT"), None)
-            if auto_select and "proxies" in auto_select:
-                if "LOAD-BALANCE" not in auto_select["proxies"]:
-                    auto_select["proxies"].insert(2, "LOAD-BALANCE")
+            # Add LOAD-BALANCE to DINGGA-SELECT or AUTO-SELECT if present
+            main_select = next((g for g in groups if g.get("name") in ("DINGGA-SELECT", "AUTO-SELECT")), None)
+            if main_select and "proxies" in main_select:
+                if "LOAD-BALANCE" not in main_select["proxies"]:
+                    main_select["proxies"].insert(2, "LOAD-BALANCE")
 
         for group in groups:
             if "proxies" in group and isinstance(group["proxies"], list):
@@ -269,7 +269,7 @@ class YamlConfigManager:
     def create_new_config(self, file_path: str, proxies: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Generates a brand new Clash YAML configuration with complete groups:
-        AUTO-SELECT, AUTO-BESTPING, AUTO-FALLBACK, LOAD-BALANCE, MANUAL-LIVE.
+        DINGGA-SELECT (Default: AUTO-BESTPING), AUTO-BESTPING, AUTO-FALLBACK, LOAD-BALANCE, MANUAL-LIVE.
         """
         proxy_names = [p.get("name") for p in proxies if p.get("name")]
 
@@ -327,7 +327,7 @@ class YamlConfigManager:
             "proxies": proxies,
             "proxy-groups": [
                 {
-                    "name": "AUTO-SELECT",
+                    "name": "DINGGA-SELECT",
                     "type": "select",
                     "proxies": ["AUTO-BESTPING", "AUTO-FALLBACK", "LOAD-BALANCE", "MANUAL-LIVE"] + proxy_names
                 },
@@ -361,7 +361,7 @@ class YamlConfigManager:
                 }
             ],
             "rules": [
-                "MATCH,AUTO-SELECT"
+                "MATCH,DINGGA-SELECT"
             ]
         }
 

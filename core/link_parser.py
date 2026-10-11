@@ -230,3 +230,79 @@ class RawLinkParser:
                 result.append(wild_node)
 
         return result
+
+    @classmethod
+    def proxy_to_raw_link(cls, p: Dict[str, Any], bug_hosts: Optional[List[str]] = None) -> str:
+        """
+        Converts a Clash proxy dict back into a standard 1-line URI link.
+        Works for both BOLAK and WILD proxies, resolving the real VPS domain.
+        """
+        if not bug_hosts:
+            bug_hosts = ["support.zoom.us", "v.whatsapp.net", "zoom.us"]
+
+        ptype = (p.get("type") or "trojan").lower()
+        server = p.get("server", "")
+        port = p.get("port", 443)
+        pwd = p.get("password") or p.get("uuid") or ""
+        sni = p.get("sni", "")
+        ws_opts = p.get("ws-opts") or {}
+        path = ws_opts.get("path", "/trojan" if ptype == "trojan" else "/")
+        headers = ws_opts.get("headers") or {}
+        host_hdr = headers.get("Host", "")
+        name = p.get("name", "Proxy")
+        clean_name = re.sub(r"-(BOLAK|WILD)$", "", name, flags=re.IGNORECASE)
+
+        # Resolve real VPS host
+        real_host = ""
+        for bh in bug_hosts:
+            if sni.startswith(bh + "."):
+                real_host = sni[len(bh) + 1:]
+                break
+            elif host_hdr.startswith(bh + "."):
+                real_host = host_hdr[len(bh) + 1:]
+                break
+
+        if not real_host:
+            if host_hdr and host_hdr != server:
+                real_host = host_hdr
+            elif sni and sni != server:
+                real_host = sni
+            else:
+                real_host = server
+
+        encoded_path = urllib.parse.quote(path)
+        remark = f"(dingga) [{clean_name}]"
+
+        if ptype == "trojan":
+            return (
+                f"trojan://{pwd}@{real_host}:{port}?"
+                f"security=tls&type=ws&headerType=&path={encoded_path}&host={real_host}&sni={real_host}&fp=&allowInsecure=1#"
+                f"{urllib.parse.quote(remark)}"
+            )
+        elif ptype == "vless":
+            return (
+                f"vless://{pwd}@{real_host}:{port}?"
+                f"security=tls&type=ws&headerType=&path={encoded_path}&host={real_host}&sni={real_host}&fp=&allowInsecure=1#"
+                f"{urllib.parse.quote(remark)}"
+            )
+        elif ptype == "vmess":
+            vmess_obj = {
+                "v": "2",
+                "ps": remark,
+                "add": real_host,
+                "port": port,
+                "id": pwd,
+                "aid": p.get("alterId", 0),
+                "scy": "auto",
+                "net": "ws",
+                "type": "none",
+                "host": real_host,
+                "path": path,
+                "tls": "tls",
+                "sni": real_host
+            }
+            b64 = base64.b64encode(json.dumps(vmess_obj).encode("utf-8")).decode("utf-8")
+            return f"vmess://{b64}"
+
+        return ""
+

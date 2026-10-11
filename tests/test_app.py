@@ -139,7 +139,18 @@ class TestClashProxyStudio(unittest.TestCase):
         self.assertIn("ID-NUSA3-BOLAK", resp.text)
         self.assertIn("ID-T1-BOLAK", resp.text)
         self.assertIn("AUTO-BESTPING", resp.text)
-        self.assertIn("AUTO-SELECT", resp.text)
+        self.assertIn("DINGGA-SELECT", resp.text)
+
+    def test_proxies_to_raw_links_endpoint(self):
+        """Test POST /api/proxies/to-raw-links reconstructs raw 1-line URIs"""
+        resp = self.client.post("/api/proxies/to-raw-links", json={
+            "names": ["ID-NUSA3-BOLAK"]
+        })
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["count"], 1)
+        self.assertTrue(data["links"][0].startswith("trojan://"))
+        self.assertIn("nusa3.aixxycode.my.id", data["links"][0])
 
 if __name__ == "__main__":
     unittest.main()
