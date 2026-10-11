@@ -17,6 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // DOM Elements
   const configSelect = document.getElementById('configSelect');
   const btnReloadConfig = document.getElementById('btnReloadConfig');
+  const btnUploadYaml = document.getElementById('btnUploadYaml');
+  const yamlFileInput = document.getElementById('yamlFileInput');
   const coreDot = document.getElementById('coreDot');
   const coreText = document.getElementById('coreText');
   const btnRestartCore = document.getElementById('btnRestartCore');
@@ -31,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnPurgeDead = document.getElementById('btnPurgeDead');
   const testTargetUrl = document.getElementById('testTargetUrl');
   const btnRawYaml = document.getElementById('btnRawYaml');
+  const btnExportYamlPicker = document.getElementById('btnExportYamlPicker');
   const btnDownloadYaml = document.getElementById('btnDownloadYaml');
 
   // Modals for New Config & Import Links
@@ -126,6 +129,20 @@ document.addEventListener('DOMContentLoaded', () => {
     btnReloadConfig.addEventListener('click', async () => {
       await fetchConfigs();
       showToast('Config list refreshed', 'info');
+    });
+
+    btnUploadYaml.addEventListener('click', () => {
+      yamlFileInput.click();
+    });
+
+    yamlFileInput.addEventListener('change', async (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        await handleFileUpload(e.target.files[0]);
+      }
+    });
+
+    btnExportYamlPicker.addEventListener('click', async () => {
+      await handleExportYamlPicker();
     });
 
     btnRestartCore.addEventListener('click', async () => {
@@ -785,20 +802,114 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(errJson.detail || 'Gagal mengekspor live only');
       }
 
-      const blob = await resp.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
+      const yamlText = await resp.text();
       const base = (hudFileName.textContent || 'config').replace(/\.ya?ml$/i, '');
-      a.download = `${base}_LIVE_ONLY.yaml`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      const suggestedFilename = `${base}_LIVE_ONLY.yaml`;
 
-      showToast('File Live Only berhasil di-download!', 'success');
+      // Try native Save As dialog if supported
+      if (window.showSaveFilePicker) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: suggestedFilename,
+          types: [{
+            description: 'YAML Configuration',
+            accept: { 'application/x-yaml': ['.yaml', '.yml'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(yamlText);
+        await writable.close();
+        showToast('✅ File Live Only berhasil disimpan ke lokasi pilihan!', 'success');
+      } else {
+        const blob = new Blob([yamlText], { type: 'application/x-yaml' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = suggestedFilename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        showToast('File Live Only berhasil di-download!', 'success');
+      }
     } catch (err) {
-      showToast('Error export: ' + err.message, 'error');
+      if (err.name !== 'AbortError') {
+        showToast('Error export: ' + err.message, 'error');
+      }
+    }
+  }
+
+  // --- NATIVE FILE PICKER & EXPLORER UPLOAD ---
+
+  async function handleFileUpload(file) {
+    if (!file) return;
+    const name = file.name;
+    if (!name.endsWith('.yaml') && !name.endsWith('.yml')) {
+      showToast('Pilih file berformat .yaml atau .yml!', 'error');
+      return;
+    }
+
+    showToast(`Mengupload ${name}...`, 'info');
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const resp = await fetch('/api/configs/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Gagal mengupload file konfigurasi');
+
+      showToast(`✅ File ${data.filename} (${data.proxy_count} proxies) berhasil dimuat!`, 'success');
+      yamlFileInput.value = '';
+
+      // Reload config list and switch to it
+      await fetchConfigs();
+      await loadCurrentConfig();
+    } catch (err) {
+      showToast('Error upload: ' + err.message, 'error');
+      yamlFileInput.value = '';
+    }
+  }
+
+  async function handleExportYamlPicker() {
+    try {
+      showToast('Mempersiapkan file konfigurasi...', 'info');
+      const resp = await fetch('/api/export/download');
+      if (!resp.ok) throw new Error('Gagal mengambil isi file YAML');
+      const yamlText = await resp.text();
+      const currentName = hudFileName.textContent || 'config.yaml';
+
+      // Check if native showSaveFilePicker is supported (Chrome, Edge, Opera)
+      if (window.showSaveFilePicker) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: currentName,
+          types: [{
+            description: 'YAML Configuration',
+            accept: { 'application/x-yaml': ['.yaml', '.yml'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(yamlText);
+        await writable.close();
+        showToast('✅ File berhasil disimpan ke lokasi pilihan!', 'success');
+      } else {
+        // Fallback to standard blob download
+        const blob = new Blob([yamlText], { type: 'application/x-yaml' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = currentName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        showToast('✅ File berhasil didownload ke folder Downloads!', 'success');
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        showToast('Gagal menyimpan file: ' + err.message, 'error');
+      }
     }
   }
 

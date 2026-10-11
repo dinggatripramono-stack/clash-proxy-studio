@@ -31,6 +31,10 @@
           <option value="">Loading configs...</option>
         </select>
         <button type="button" id="btnReloadConfig" class="btn-icon" title="Reload configuration list">🔄</button>
+        <button type="button" id="btnUploadYaml" class="btn-secondary btn-sm" title="Buka / Import file YAML dari File Explorer PC">
+          <span class="btn-icon-symbol">📂</span> Buka File...
+        </button>
+        <input type="file" id="yamlFileInput" accept=".yaml,.yml" style="display:none">
       </div>
     </div>
 
@@ -87,8 +91,11 @@
         <button type="button" id="btnRawYaml" class="btn-outline">
           <span class="btn-icon-symbol">📝</span> Edit Raw YAML
         </button>
-        <a id="btnDownloadYaml" href="/api/export/download" class="btn-outline" download title="Export seluruh konfigurasi YAML">
-          <span class="btn-icon-symbol">💾</span> Export All YAML
+        <button type="button" id="btnExportYamlPicker" class="btn-outline" title="Simpan / Export ke folder pilihan Anda via File Explorer (Save As...)">
+          <span class="btn-icon-symbol">💾</span> Save / Export As...
+        </button>
+        <a id="btnDownloadYaml" href="/api/export/download" class="btn-outline" download title="Download file konfigurasi YAML aktif">
+          <span class="btn-icon-symbol">⬇️</span> Download YAML
         </a>
       </div>
     </section>

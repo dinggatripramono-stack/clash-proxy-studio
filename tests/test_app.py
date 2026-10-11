@@ -152,5 +152,29 @@ class TestClashProxyStudio(unittest.TestCase):
         self.assertTrue(data["links"][0].startswith("trojan://"))
         self.assertIn("nusa3.aixxycode.my.id", data["links"][0])
 
+    def test_save_to_onedrive_endpoint(self):
+        """Test POST /api/configs/save-to-onedrive saves clean YAML"""
+        sample_yaml = (
+            "port: 7890\n"
+            "proxies:\n"
+            "- name: TEST-SAVE-NODE\n"
+            "  type: trojan\n"
+            "  server: support.zoom.us\n"
+            "  port: 443\n"
+            "  password: pass\n"
+        )
+        resp = self.client.post("/api/configs/save-to-onedrive", json={
+            "filename": "TEMP_TEST_ONEDRIVE.yaml",
+            "yaml_content": sample_yaml
+        })
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["status"], "ok")
+        saved_path = data["path"]
+        self.assertTrue(os.path.exists(saved_path))
+        # Cleanup temp file
+        if os.path.exists(saved_path):
+            os.remove(saved_path)
+
 if __name__ == "__main__":
     unittest.main()

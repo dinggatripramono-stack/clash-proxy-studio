@@ -4,7 +4,7 @@ import json
 import yaml
 import asyncio
 from typing import Dict, List, Any, Optional
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import FastAPI, HTTPException, Query, Body, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,14 +29,48 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BIN_PATH = os.path.join(BASE_DIR, "bin", "mihomo.exe")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 BACKUPS_DIR = os.path.join(BASE_DIR, "backups")
+def get_onedrive_config_dir() -> str:
+    """
+    Dynamically resolves the active OneDrive CONFIG directory across PCs:
+    Home PC, Office PC, or %OneDrive%/CONFIG
+    """
+    candidates = []
+    if os.environ.get("OneDrive"):
+        candidates.append(os.path.join(os.environ["OneDrive"], "CONFIG"))
+    if os.environ.get("OneDriveConsumer"):
+        candidates.append(os.path.join(os.environ["OneDriveConsumer"], "CONFIG"))
+    user_home = os.path.expanduser("~")
+    candidates.append(os.path.join(user_home, "OneDrive", "CONFIG"))
+    candidates.append(r"C:\Users\ZAVIER\OneDrive\CONFIG")
+    candidates.append(r"C:\Users\admin\OneDrive\CONFIG")
+
+    for c in candidates:
+        if os.path.exists(c):
+            return os.path.normpath(c)
+
+    od_root = os.environ.get("OneDrive") or os.path.join(user_home, "OneDrive")
+    target = os.path.join(od_root, "CONFIG")
+    os.makedirs(target, exist_ok=True)
+    return os.path.normpath(target)
+
 DEFAULT_CONFIG_DIRS = list(dict.fromkeys([
+    get_onedrive_config_dir(),
+    os.path.normpath(os.path.join(os.path.expanduser("~"), "OneDrive", "CONFIG")),
     os.path.normpath(r"C:\Users\ZAVIER\OneDrive\CONFIG"),
     os.path.normpath(r"C:\Users\admin\OneDrive\CONFIG"),
-    os.path.normpath(os.path.join(os.path.expanduser("~"), "OneDrive", "CONFIG")),
     os.path.normpath(os.path.join(BASE_DIR, "configs")),
 ]))
 
 def find_default_primary_file() -> str:
+    primary_dir = get_onedrive_config_dir()
+    target = os.path.join(primary_dir, "Telkomsel_V6_LIVE_ONLY.yaml")
+    if os.path.exists(target):
+        return os.path.normpath(target)
+
+    yamls = glob.glob(os.path.join(primary_dir, "*.yaml")) + glob.glob(os.path.join(primary_dir, "*.yml"))
+    if yamls:
+        return os.path.normpath(yamls[0])
+
     candidates = [
         r"C:\Users\ZAVIER\OneDrive\CONFIG\Telkomsel_V6_LIVE_ONLY.yaml",
         r"C:\Users\admin\OneDrive\CONFIG\Telkomsel_V6_LIVE_ONLY.yaml",
@@ -635,5 +669,79 @@ async def proxies_to_raw_links_endpoint(req: ToRawLinksRequest):
         "links": links,
         "raw_text": "\n".join(links)
     }
+
+
+@app.post("/api/configs/upload")
+async def upload_config_file(file: UploadFile = File(...)):
+    filename = file.filename
+    if not filename.endswith(".yaml") and not filename.endswith(".yml"):
+        filename += ".yaml"
+
+    target_dir = get_onedrive_config_dir()
+    os.makedirs(target_dir, exist_ok=True)
+    dest_path = os.path.normpath(os.path.join(target_dir, filename))
+
+    content = await file.read()
+    # Validate YAML
+    try:
+        parsed = yaml.safe_load(content.decode("utf-8"))
+        if not isinstance(parsed, dict) or "proxies" not in parsed:
+            raise ValueError("File YAML tidak memiliki daftar 'proxies'")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"File YAML tidak valid: {e}")
+
+    with open(dest_path, "wb") as f:
+        f.write(content)
+
+    global current_file_path
+    current_file_path = dest_path
+
+    core_restarted = False
+    if mihomo_mgr.is_binary_available():
+        core_restarted = mihomo_mgr.start_core(current_file_path)
+
+    return {
+        "status": "ok",
+        "path": dest_path,
+        "filename": filename,
+        "proxy_count": len(parsed.get("proxies", [])),
+        "core_restarted": core_restarted,
+    }
+
+
+class SaveToOneDriveRequest(BaseModel):
+    filename: str
+    yaml_content: str
+
+
+@app.post("/api/configs/save-to-onedrive")
+async def save_to_onedrive_endpoint(req: SaveToOneDriveRequest):
+    filename = req.filename.strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail="Filename cannot be empty")
+    if not filename.endswith(".yaml") and not filename.endswith(".yml"):
+        filename += ".yaml"
+
+    target_dir = get_onedrive_config_dir()
+    os.makedirs(target_dir, exist_ok=True)
+    dest_path = os.path.normpath(os.path.join(target_dir, filename))
+
+    try:
+        parsed = yaml.safe_load(req.yaml_content)
+        if not isinstance(parsed, dict):
+            raise ValueError("Konten bukan format YAML dictionary yang valid")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Syntax YAML tidak valid: {e}")
+
+    with open(dest_path, "w", encoding="utf-8") as f:
+        f.write(req.yaml_content)
+
+    return {
+        "status": "ok",
+        "path": dest_path,
+        "filename": filename,
+        "target_dir": target_dir,
+    }
+
 
 
