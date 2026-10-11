@@ -318,8 +318,8 @@ document.addEventListener('DOMContentLoaded', () => {
           progressBarFill.style.width = `${pct}%`;
           progressCountText.textContent = `${completed} / ${total}`;
 
-          // Quick update of card in real time
-          renderProxies();
+          // Targeted in-place update (prevents DOM thrashing)
+          updateCardInPlace(res.name, res);
           updateHUD();
         } else if (msg.type === 'done') {
           eventSource.close();
@@ -349,6 +349,38 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- RENDER FUNCTIONS ---
+
+  function updateCardInPlace(name, test) {
+    if (!name || !test) return;
+    const card = document.querySelector(`.proxy-card[data-name="${CSS.escape(name)}"]`);
+    if (!card) return;
+
+    card.classList.remove('status-untested', 'status-testing', 'status-alive', 'status-dead');
+
+    const newBadge = document.createElement('span');
+    if (test.testing) {
+      card.classList.add('status-testing');
+      newBadge.className = 'latency-badge testing';
+      newBadge.textContent = '⚡ PINGING...';
+    } else if (test.alive) {
+      card.classList.add('status-alive');
+      newBadge.className = 'latency-badge alive';
+      newBadge.textContent = `⚡ ${test.delay} ms`;
+    } else {
+      card.classList.add('status-dead');
+      newBadge.className = 'latency-badge dead';
+      const errShort = test.error ? (test.error.includes('503') ? 'DEAD / 503' : 'TIMEOUT') : 'DEAD';
+      newBadge.textContent = `🔴 ${errShort}`;
+      if (test.error) {
+        newBadge.title = test.error;
+      }
+    }
+
+    const badge = card.querySelector('.latency-badge');
+    if (badge) {
+      badge.replaceWith(newBadge);
+    }
+  }
 
   function renderProxies() {
     const list = getFilteredAndSortedProxies();

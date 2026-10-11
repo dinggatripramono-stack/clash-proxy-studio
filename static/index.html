@@ -30,17 +30,17 @@
         <select id="configSelect" title="Select Clash Configuration">
           <option value="">Loading configs...</option>
         </select>
-        <button id="btnReloadConfig" class="btn-icon" title="Reload configuration list">🔄</button>
+        <button type="button" id="btnReloadConfig" class="btn-icon" title="Reload configuration list">🔄</button>
       </div>
     </div>
 
-    <!-- System Core Status -->
-    <div class="nav-actions">
-      <div class="core-status-pill" id="coreStatusPill" title="Mihomo Meta Isolated Core Status">
+    <!-- Core Status -->
+    <div class="core-status-box">
+      <div class="core-indicator">
         <span class="status-dot green pulse" id="coreDot"></span>
         <span class="status-text" id="coreText">CORE ACTIVE :19090</span>
       </div>
-      <button id="btnRestartCore" class="btn-secondary btn-sm" title="Restart Isolated Test Core">Restart Core</button>
+      <button type="button" id="btnRestartCore" class="btn-secondary btn-sm" title="Restart Isolated Test Core">Restart Core</button>
     </div>
   </header>
 
@@ -49,16 +49,16 @@
     <!-- Top Action Ribbon -->
     <section class="action-ribbon">
       <div class="ribbon-left">
-        <button id="btnTestAll" class="btn-primary btn-glow">
+        <button type="button" id="btnTestAll" class="btn-primary btn-glow">
           <span class="btn-icon-symbol">⚡</span> TEST ALL NODES
         </button>
-        <button id="btnAddProxy" class="btn-success">
+        <button type="button" id="btnAddProxy" class="btn-success">
           <span class="btn-icon-symbol">➕</span> Add Node
         </button>
-        <button id="btnBulkReplace" class="btn-secondary">
+        <button type="button" id="btnBulkReplace" class="btn-secondary">
           <span class="btn-icon-symbol">🔀</span> Bulk Bug Host
         </button>
-        <button id="btnPurgeDead" class="btn-danger" disabled>
+        <button type="button" id="btnPurgeDead" class="btn-danger" disabled>
           <span class="btn-icon-symbol">🧹</span> Purge Dead Nodes
         </button>
       </div>
@@ -72,7 +72,7 @@
             <option value="http://www.google.com/generate_204">Google HTTP</option>
           </select>
         </div>
-        <button id="btnRawYaml" class="btn-outline">
+        <button type="button" id="btnRawYaml" class="btn-outline">
           <span class="btn-icon-symbol">📝</span> Edit Raw YAML
         </button>
         <a id="btnDownloadYaml" href="/api/export/download" class="btn-outline" download>
@@ -129,10 +129,10 @@
       </div>
 
       <div class="filter-tabs">
-        <button class="filter-tab active" data-filter="all">All (<span id="countTabAll">0</span>)</button>
-        <button class="filter-tab" data-filter="alive">🟢 Alive (<span id="countTabAlive">0</span>)</button>
-        <button class="filter-tab" data-filter="dead">🔴 Dead (<span id="countTabDead">0</span>)</button>
-        <button class="filter-tab" data-filter="untested">⏳ Untested (<span id="countTabUntested">0</span>)</button>
+        <button type="button" class="filter-tab active" data-filter="all">All (<span id="countTabAll">0</span>)</button>
+        <button type="button" class="filter-tab" data-filter="alive">🟢 Alive (<span id="countTabAlive">0</span>)</button>
+        <button type="button" class="filter-tab" data-filter="dead">🔴 Dead (<span id="countTabDead">0</span>)</button>
+        <button type="button" class="filter-tab" data-filter="untested">⏳ Untested (<span id="countTabUntested">0</span>)</button>
       </div>
 
       <div class="sort-box">
