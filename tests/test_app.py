@@ -125,10 +125,10 @@ class TestClashProxyStudio(unittest.TestCase):
         proxies = RawLinkParser.convert_to_clash_proxies(raw_text, bug_host="support.zoom.us", dual_mode=True)
         self.assertEqual(len(proxies), 4)
         names = [p["name"] for p in proxies]
-        self.assertIn("DINGGA-LEASEWEB4-BOLAK", names)
-        self.assertIn("DINGGA-LEASEWEB4-WILD", names)
-        self.assertIn("DINGGA-NUSA3-BOLAK", names)
-        self.assertIn("DINGGA-NUSA3-WILD", names)
+        self.assertIn("LEASEWEB4-BOLAK", names)
+        self.assertIn("LEASEWEB4-WILD", names)
+        self.assertIn("NUSA3-BOLAK", names)
+        self.assertIn("NUSA3-WILD", names)
 
     def test_export_live_only_endpoint(self):
         """Test POST /api/export/live-only returns filtered YAML with live nodes only"""

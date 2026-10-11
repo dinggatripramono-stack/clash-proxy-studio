@@ -21,29 +21,14 @@ class RawLinkParser:
     @staticmethod
     def clean_name(raw_remark: str, host: str) -> str:
         """
-        Creates an intuitive, elegant node base name.
-        Example: '(dingga) [Trojan - ws] TLS' on 'leaseweb4.svrkencang.web.id' -> 'DINGGA-LEASEWEB4'
+        Creates a clean node base name derived strictly from the server host.
+        Example: 'leaseweb4.svrkencang.web.id' -> 'LEASEWEB4'
+                 'id-t1.aixxycode.my.id' -> 'ID-T1'
+                 'nusa3.aixxycode.my.id' -> 'NUSA3'
         """
         host_sub = host.split(".")[0].upper() if host else "NODE"
-        
-        if not raw_remark:
-            return host_sub
-
-        remark = urllib.parse.unquote(raw_remark).strip()
-        
-        # Check if remark has user tag like (dingga) or (zavier)
-        user_match = re.search(r"\((.*?)\)", remark)
-        user_tag = ""
-        if user_match:
-            candidate = user_match.group(1).strip()
-            # Ignore protocol names in parentheses
-            if candidate.lower() not in ("trojan", "vless", "vmess", "ws", "tls", "ss"):
-                user_tag = re.sub(r"[^A-Za-z0-9_-]", "", candidate).upper()
-
-        if user_tag:
-            return f"{user_tag}-{host_sub}"
-
-        return host_sub
+        clean = re.sub(r"[^A-Za-z0-9_-]", "", host_sub).strip("-")
+        return clean or "NODE"
 
     @classmethod
     def parse_trojan_or_vless(cls, url: str) -> Optional[Dict[str, Any]]:
@@ -157,8 +142,11 @@ class RawLinkParser:
             base_name = cls.clean_name(parsed.get("remark", ""), real_host)
             
             # Ensure base name uniqueness if multiple accounts share host
-            if base_name in seen_names:
-                base_name = f"{base_name}-{idx}"
+            orig_base = base_name
+            counter = 2
+            while base_name in seen_names:
+                base_name = f"{orig_base}-{counter}"
+                counter += 1
             seen_names.add(base_name)
 
             path = parsed.get("path", "/trojan" if proto == "trojan" else "/")
@@ -271,7 +259,7 @@ class RawLinkParser:
                 real_host = server
 
         encoded_path = urllib.parse.quote(path)
-        remark = f"(dingga) [{clean_name}]"
+        remark = f"[{clean_name}]"
 
         if ptype == "trojan":
             return (
