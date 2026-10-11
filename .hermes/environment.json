@@ -1,0 +1,17 @@
+{
+  "name": "Clash Live Proxy Studio PC",
+  "kind": "fastapi",
+  "bootstrap": [
+    "python -c \"import fastapi, uvicorn, yaml, requests\""
+  ],
+  "build": [],
+  "test": [
+    "python -m unittest discover tests -v"
+  ],
+  "start": "python -m uvicorn app:app --host 127.0.0.1 --port 8999",
+  "port": 8999,
+  "readinessPath": "/",
+  "evidence": [
+    "FastAPI app with standalone test suite and Mihomo proxy manager"
+  ]
+}
