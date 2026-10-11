@@ -21,13 +21,37 @@ document.addEventListener('DOMContentLoaded', () => {
   const coreText = document.getElementById('coreText');
   const btnRestartCore = document.getElementById('btnRestartCore');
 
+  const btnNewConfig = document.getElementById('btnNewConfig');
+  const btnImportLinks = document.getElementById('btnImportLinks');
   const btnTestAll = document.getElementById('btnTestAll');
+  const btnExportLiveOnly = document.getElementById('btnExportLiveOnly');
   const btnAddProxy = document.getElementById('btnAddProxy');
   const btnBulkReplace = document.getElementById('btnBulkReplace');
   const btnPurgeDead = document.getElementById('btnPurgeDead');
   const testTargetUrl = document.getElementById('testTargetUrl');
   const btnRawYaml = document.getElementById('btnRawYaml');
   const btnDownloadYaml = document.getElementById('btnDownloadYaml');
+
+  // Modals for New Config & Import Links
+  const newConfigModal = document.getElementById('newConfigModal');
+  const btnCloseNewConfigModal = document.getElementById('btnCloseNewConfigModal');
+  const btnCancelNewConfigModal = document.getElementById('btnCancelNewConfigModal');
+  const btnSubmitNewConfig = document.getElementById('btnSubmitNewConfig');
+  const newConfigName = document.getElementById('newConfigName');
+  const newConfigBugHost = document.getElementById('newConfigBugHost');
+  const newConfigLinks = document.getElementById('newConfigLinks');
+  const newConfigDualMode = document.getElementById('newConfigDualMode');
+  const newConfigAutoTest = document.getElementById('newConfigAutoTest');
+
+  const importLinksModal = document.getElementById('importLinksModal');
+  const btnCloseImportModal = document.getElementById('btnCloseImportModal');
+  const btnCancelImportModal = document.getElementById('btnCancelImportModal');
+  const btnSubmitImport = document.getElementById('btnSubmitImport');
+  const importTargetFilename = document.getElementById('importTargetFilename');
+  const importBugHost = document.getElementById('importBugHost');
+  const importLinksText = document.getElementById('importLinksText');
+  const importDualMode = document.getElementById('importDualMode');
+  const importAutoTest = document.getElementById('importAutoTest');
 
   const hudTotal = document.getElementById('hudTotal');
   const hudAlive = document.getElementById('hudAlive');
@@ -124,6 +148,41 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Ribbon Actions
+    btnNewConfig.addEventListener('click', () => {
+      newConfigModal.classList.remove('hidden');
+    });
+
+    btnCloseNewConfigModal.addEventListener('click', () => {
+      newConfigModal.classList.add('hidden');
+    });
+    btnCancelNewConfigModal.addEventListener('click', () => {
+      newConfigModal.classList.add('hidden');
+    });
+
+    btnSubmitNewConfig.addEventListener('click', async () => {
+      await handleCreateNewConfig();
+    });
+
+    btnImportLinks.addEventListener('click', () => {
+      importTargetFilename.textContent = hudFileName.textContent || 'Active Config';
+      importLinksModal.classList.remove('hidden');
+    });
+
+    btnCloseImportModal.addEventListener('click', () => {
+      importLinksModal.classList.add('hidden');
+    });
+    btnCancelImportModal.addEventListener('click', () => {
+      importLinksModal.classList.add('hidden');
+    });
+
+    btnSubmitImport.addEventListener('click', async () => {
+      await handleImportLinks();
+    });
+
+    btnExportLiveOnly.addEventListener('click', async () => {
+      await handleExportLiveOnly();
+    });
+
     btnTestAll.addEventListener('click', () => {
       if (!state.isTestingAll) {
         testAllNodes();
@@ -573,8 +632,159 @@ document.addEventListener('DOMContentLoaded', () => {
     countTabDead.textContent = deadCount;
     countTabUntested.textContent = untestedCount;
 
-    // Enable/disable purge dead button
+    // Enable/disable purge dead & export live buttons
     btnPurgeDead.disabled = deadCount === 0;
+    btnExportLiveOnly.disabled = aliveCount === 0;
+  }
+
+  // --- NEW CONFIG & BULK IMPORT LOGIC ---
+
+  async function handleCreateNewConfig() {
+    const filename = newConfigName.value.trim();
+    const bugHost = newConfigBugHost.value.trim() || 'support.zoom.us';
+    const rawLinks = newConfigLinks.value.trim();
+    const dualMode = newConfigDualMode.checked;
+    const autoTest = newConfigAutoTest.checked;
+
+    if (!filename) {
+      showToast('Masukkan nama file YAML!', 'error');
+      return;
+    }
+    if (!rawLinks) {
+      showToast('Paste minimal 1 baris link akun!', 'error');
+      return;
+    }
+
+    btnSubmitNewConfig.disabled = true;
+    btnSubmitNewConfig.textContent = 'Membuat Config...';
+
+    try {
+      const resp = await fetch('/api/configs/create-new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: filename,
+          raw_links: rawLinks,
+          bug_host: bugHost,
+          dual_mode: dualMode
+        })
+      });
+
+      const res = await resp.json();
+      if (!resp.ok) {
+        throw new Error(res.detail || 'Gagal membuat file config baru');
+      }
+
+      showToast(`Berhasil membuat ${res.filename} (${res.proxies_count} node)!`, 'success');
+      newConfigModal.classList.add('hidden');
+      newConfigLinks.value = '';
+
+      // Reload config list and switch to it
+      await fetchConfigs();
+      await loadCurrentConfig();
+
+      if (autoTest) {
+        setTimeout(() => {
+          testAllNodes();
+        }, 500);
+      }
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      btnSubmitNewConfig.disabled = false;
+      btnSubmitNewConfig.textContent = '🚀 Buat File & Test Live';
+    }
+  }
+
+  async function handleImportLinks() {
+    const bugHost = importBugHost.value.trim() || 'support.zoom.us';
+    const rawLinks = importLinksText.value.trim();
+    const dualMode = importDualMode.checked;
+    const autoTest = importAutoTest.checked;
+
+    if (!rawLinks) {
+      showToast('Paste minimal 1 baris link akun!', 'error');
+      return;
+    }
+
+    btnSubmitImport.disabled = true;
+    btnSubmitImport.textContent = 'Menambahkan...';
+
+    try {
+      const resp = await fetch('/api/proxies/import-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          raw_links: rawLinks,
+          bug_host: bugHost,
+          dual_mode: dualMode
+        })
+      });
+
+      const res = await resp.json();
+      if (!resp.ok) {
+        throw new Error(res.detail || 'Gagal menambahkan link akun');
+      }
+
+      showToast(`Berhasil menambahkan ${res.added_count} node baru!`, 'success');
+      importLinksModal.classList.add('hidden');
+      importLinksText.value = '';
+
+      // Reload current config
+      await loadCurrentConfig();
+
+      if (autoTest) {
+        setTimeout(() => {
+          testAllNodes();
+        }, 500);
+      }
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      btnSubmitImport.disabled = false;
+      btnSubmitImport.textContent = '📥 Tambahkan & Test';
+    }
+  }
+
+  async function handleExportLiveOnly() {
+    const liveNames = state.proxies
+      .filter(p => state.testResults[p.name] && state.testResults[p.name].alive)
+      .map(p => p.name);
+
+    if (liveNames.length === 0) {
+      showToast('Tidak ada node yang lolos tes (hidup)! Jalankan test ping terlebih dahulu.', 'error');
+      return;
+    }
+
+    showToast(`Mengekspor ${liveNames.length} node aktif...`, 'info');
+
+    try {
+      const resp = await fetch('/api/export/live-only', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ live_names: liveNames })
+      });
+
+      if (!resp.ok) {
+        const errJson = await resp.json();
+        throw new Error(errJson.detail || 'Gagal mengekspor live only');
+      }
+
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const base = (hudFileName.textContent || 'config').replace(/\.ya?ml$/i, '');
+      a.download = `${base}_LIVE_ONLY.yaml`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      showToast('File Live Only berhasil di-download!', 'success');
+    } catch (err) {
+      showToast('Error export: ' + err.message, 'error');
+    }
   }
 
   // --- PROXY CRUD ---

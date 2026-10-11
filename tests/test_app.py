@@ -115,5 +115,31 @@ class TestClashProxyStudio(unittest.TestCase):
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
+    def test_link_parser_dual_mode(self):
+        """Test RawLinkParser parsing and bolak/wild expansion"""
+        from core.link_parser import RawLinkParser
+        raw_text = (
+            "trojan://pass1@leaseweb4.svrkencang.web.id:443?security=tls&type=ws&path=%2Ftrojan&host=leaseweb4.svrkencang.web.id&sni=leaseweb4.svrkencang.web.id#(dingga) [Trojan - ws] TLS\n"
+            "trojan://pass2@nusa3.aixxycode.my.id:443?security=tls&type=ws&path=%2Ftrojan&host=nusa3.aixxycode.my.id&sni=nusa3.aixxycode.my.id#(dingga) [Trojan - ws] TLS"
+        )
+        proxies = RawLinkParser.convert_to_clash_proxies(raw_text, bug_host="support.zoom.us", dual_mode=True)
+        self.assertEqual(len(proxies), 4)
+        names = [p["name"] for p in proxies]
+        self.assertIn("DINGGA-LEASEWEB4-BOLAK", names)
+        self.assertIn("DINGGA-LEASEWEB4-WILD", names)
+        self.assertIn("DINGGA-NUSA3-BOLAK", names)
+        self.assertIn("DINGGA-NUSA3-WILD", names)
+
+    def test_export_live_only_endpoint(self):
+        """Test POST /api/export/live-only returns filtered YAML with live nodes only"""
+        resp = self.client.post("/api/export/live-only", json={
+            "live_names": ["ID-NUSA3-BOLAK", "ID-T1-BOLAK"]
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("ID-NUSA3-BOLAK", resp.text)
+        self.assertIn("ID-T1-BOLAK", resp.text)
+        self.assertIn("AUTO-BESTPING", resp.text)
+        self.assertIn("AUTO-SELECT", resp.text)
+
 if __name__ == "__main__":
     unittest.main()

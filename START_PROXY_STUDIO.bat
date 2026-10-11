@@ -9,6 +9,30 @@ echo          CLASH LIVE PROXY STUDIO - PC AUDITOR ^& CONFIG MANAGER
 echo ======================================================================
 echo.
 
+:: 0. Auto-Sync Latest Updates from GitHub (Cross-PC Parity: Rumah ^<^=^> Kantor)
+if exist ".git" (
+    echo [*] Memeriksa update terbaru dari GitHub...
+    git --version >nul 2>&1
+    if !errorlevel! equ 0 (
+        git fetch origin main >nul 2>&1
+        if !errorlevel! equ 0 (
+            for /f "tokens=*" %%a in ('git rev-list HEAD..origin/main --count 2^>nul') do set "BEHIND=%%a"
+            if defined BEHIND (
+                if !BEHIND! gtr 0 (
+                    echo [*] Ditemukan !BEHIND! pembaruan baru dari GitHub! Mengunduh update...
+                    git pull --rebase origin main
+                    echo [OK] Aplikasi berhasil disinkronkan ke versi terbaru!
+                ) else (
+                    echo [OK] Aplikasi sudah versi paling mutakhir (UP TO DATE).
+                )
+            )
+        ) else (
+            echo [!] Jaringan offline / remote tidak terjangkau. Melanjutkan versi lokal...
+        )
+    )
+)
+echo.
+
 :: 1. Detect Python
 set "PYTHON_EXE=python"
 python --version >nul 2>&1
@@ -55,5 +79,3 @@ echo [*] Menjalankan server aplikasi...
 echo [*] Tekan Ctrl+C di jendela ini untuk mematikan aplikasi.
 echo.
 !PYTHON_EXE! -m uvicorn app:app --host 127.0.0.1 --port 8999
-
-pause

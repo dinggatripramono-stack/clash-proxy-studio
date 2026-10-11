@@ -209,3 +209,165 @@ class YamlConfigManager:
             self.save_config(file_path, data)
 
         return removed_count
+
+    def bulk_add_proxies(self, file_path: str, new_proxies: List[Dict[str, Any]]) -> int:
+        """
+        Adds multiple proxy nodes and updates all relevant proxy groups.
+        """
+        data = self.load_config(file_path)
+        existing_proxies = data.get("proxies", [])
+        existing_names = {p.get("name") for p in existing_proxies}
+
+        added = []
+        for p in new_proxies:
+            name = p.get("name")
+            if not name:
+                continue
+            # If duplicate name, append counter
+            final_name = name
+            counter = 2
+            while final_name in existing_names:
+                final_name = f"{name}-{counter}"
+                counter += 1
+            p["name"] = final_name
+            existing_names.add(final_name)
+            existing_proxies.append(p)
+            added.append(final_name)
+
+        data["proxies"] = existing_proxies
+
+        # Update proxy groups
+        groups = data.get("proxy-groups", [])
+        group_names = {g.get("name") for g in groups}
+        
+        # Ensure LOAD-BALANCE group exists if missing
+        if "LOAD-BALANCE" not in group_names and len(groups) > 0:
+            lb_group = {
+                "name": "LOAD-BALANCE",
+                "type": "load-balance",
+                "strategy": "round-robin",
+                "url": "http://www.gstatic.com/generate_204",
+                "interval": 300,
+                "proxies": [p.get("name") for p in existing_proxies]
+            }
+            groups.append(lb_group)
+            # Add LOAD-BALANCE to AUTO-SELECT if present
+            auto_select = next((g for g in groups if g.get("name") == "AUTO-SELECT"), None)
+            if auto_select and "proxies" in auto_select:
+                if "LOAD-BALANCE" not in auto_select["proxies"]:
+                    auto_select["proxies"].insert(2, "LOAD-BALANCE")
+
+        for group in groups:
+            if "proxies" in group and isinstance(group["proxies"], list):
+                for name in added:
+                    if name not in group["proxies"]:
+                        group["proxies"].append(name)
+
+        self.save_config(file_path, data)
+        return len(added)
+
+    def create_new_config(self, file_path: str, proxies: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Generates a brand new Clash YAML configuration with complete groups:
+        AUTO-SELECT, AUTO-BESTPING, AUTO-FALLBACK, LOAD-BALANCE, MANUAL-LIVE.
+        """
+        proxy_names = [p.get("name") for p in proxies if p.get("name")]
+
+        new_cfg = {
+            "port": 7890,
+            "socks-port": 7891,
+            "redir-port": 7892,
+            "mixed-port": 7893,
+            "tproxy-port": 7895,
+            "ipv6": False,
+            "mode": "rule",
+            "log-level": "silent",
+            "allow-lan": True,
+            "bind-address": "*",
+            "external-controller": "0.0.0.0:9090",
+            "secret": "",
+            "unified-delay": True,
+            "tcp-concurrent": True,
+            "profile": {
+                "store-selected": True,
+                "store-fake-ip": True
+            },
+            "dns": {
+                "enable": True,
+                "ipv6": False,
+                "enhanced-mode": "fake-ip",
+                "listen": "0.0.0.0:7874",
+                "default-nameserver": [
+                    "1.1.1.1",
+                    "8.8.8.8",
+                    "203.130.196.6",
+                    "202.134.0.62"
+                ],
+                "nameserver": [
+                    "https://cloudflare-dns.com/dns-query",
+                    "https://dns.google/dns-query",
+                    "1.1.1.1",
+                    "8.8.8.8"
+                ],
+                "fallback": [
+                    "https://cloudflare-dns.com/dns-query",
+                    "https://dns.google/dns-query",
+                    "1.0.0.1",
+                    "8.8.4.4"
+                ],
+                "fake-ip-range": "198.18.0.1/16",
+                "fake-ip-filter": [
+                    "*.lan",
+                    "*.local",
+                    "*.localhost",
+                    "*.msftconnecttest.com",
+                    "*.msftncsi.com"
+                ]
+            },
+            "proxies": proxies,
+            "proxy-groups": [
+                {
+                    "name": "AUTO-SELECT",
+                    "type": "select",
+                    "proxies": ["AUTO-BESTPING", "AUTO-FALLBACK", "LOAD-BALANCE", "MANUAL-LIVE"] + proxy_names
+                },
+                {
+                    "name": "AUTO-BESTPING",
+                    "type": "url-test",
+                    "proxies": list(proxy_names),
+                    "url": "http://www.gstatic.com/generate_204",
+                    "interval": 120,
+                    "tolerance": 30
+                },
+                {
+                    "name": "AUTO-FALLBACK",
+                    "type": "fallback",
+                    "proxies": list(proxy_names),
+                    "url": "http://www.gstatic.com/generate_204",
+                    "interval": 120
+                },
+                {
+                    "name": "LOAD-BALANCE",
+                    "type": "load-balance",
+                    "strategy": "round-robin",
+                    "url": "http://www.gstatic.com/generate_204",
+                    "interval": 300,
+                    "proxies": list(proxy_names)
+                },
+                {
+                    "name": "MANUAL-LIVE",
+                    "type": "select",
+                    "proxies": list(proxy_names)
+                }
+            ],
+            "rules": [
+                "MATCH,AUTO-SELECT"
+            ]
+        }
+
+        # Write directly
+        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            yaml.dump(new_cfg, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+        return new_cfg

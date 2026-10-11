@@ -117,19 +117,31 @@ class MihomoManager:
         return ready
 
     def stop_core(self):
-        """Stops the Mihomo process cleanly."""
+        """Stops the Mihomo process cleanly without leaving orphan processes."""
         if self.process:
+            pid = self.process.pid
             try:
                 self.process.terminate()
-                self.process.wait(timeout=2.0)
+                self.process.wait(timeout=1.0)
             except Exception:
                 try:
                     self.process.kill()
                 except Exception:
                     pass
-            finally:
-                self.process = None
-                self.active = False
+            
+            # Windows extra insurance against zombie processes
+            if os.name == "nt" and pid:
+                try:
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", str(pid)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                except Exception:
+                    pass
+
+            self.process = None
+            self.active = False
 
     def test_single_proxy(
         self,

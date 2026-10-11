@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from core.yaml_handler import YamlConfigManager
 from core.mihomo_manager import MihomoManager
+from core.link_parser import RawLinkParser
 
 app = FastAPI(title="Clash Live Proxy Studio PC", version="1.0.0")
 
@@ -454,3 +455,136 @@ async def download_config():
         media_type="application/x-yaml",
         filename=os.path.basename(active_path)
     )
+
+
+class CreateNewConfigRequest(BaseModel):
+    filename: str
+    raw_links: str
+    bug_host: str = "support.zoom.us"
+    dual_mode: bool = True
+
+
+@app.post("/api/configs/create-new")
+async def create_new_config_endpoint(req: CreateNewConfigRequest):
+    global current_file_path
+    name = req.filename.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Filename cannot be empty")
+    if not name.endswith(".yaml") and not name.endswith(".yml"):
+        name += ".yaml"
+
+    # Save to primary config directory
+    target_dir = r"C:\Users\ZAVIER\OneDrive\CONFIG"
+    if not os.path.exists(target_dir):
+        target_dir = os.path.join(os.path.expanduser("~"), "OneDrive", "CONFIG")
+    if not os.path.exists(target_dir):
+        target_dir = os.path.join(BASE_DIR, "configs")
+    os.makedirs(target_dir, exist_ok=True)
+
+    target_path = os.path.normpath(os.path.join(target_dir, name))
+
+    # Parse proxies
+    proxies = RawLinkParser.convert_to_clash_proxies(
+        raw_text=req.raw_links,
+        bug_host=req.bug_host.strip() or "support.zoom.us",
+        dual_mode=req.dual_mode
+    )
+
+    if not proxies:
+        raise HTTPException(status_code=400, detail="Tidak ada link akun yang valid ditemukan dalam teks yang dimasukkan")
+
+    try:
+        yaml_mgr.create_new_config(target_path, proxies)
+        current_file_path = target_path
+
+        # Restart core with new file
+        core_restarted = False
+        if mihomo_mgr.is_binary_available():
+            core_restarted = mihomo_mgr.start_core(current_file_path)
+
+        return {
+            "status": "ok",
+            "path": current_file_path,
+            "filename": name,
+            "proxies_count": len(proxies),
+            "core_restarted": core_restarted,
+            "proxies": proxies
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ImportLinksRequest(BaseModel):
+    raw_links: str
+    bug_host: str = "support.zoom.us"
+    dual_mode: bool = True
+
+
+@app.post("/api/proxies/import-links")
+async def import_links_endpoint(req: ImportLinksRequest):
+    active_path = resolve_active_file()
+    if not active_path or not os.path.exists(active_path):
+        raise HTTPException(status_code=404, detail="No active config file found")
+
+    proxies = RawLinkParser.convert_to_clash_proxies(
+        raw_text=req.raw_links,
+        bug_host=req.bug_host.strip() or "support.zoom.us",
+        dual_mode=req.dual_mode
+    )
+
+    if not proxies:
+        raise HTTPException(status_code=400, detail="Tidak ada link akun yang valid ditemukan")
+
+    try:
+        added_count = yaml_mgr.bulk_add_proxies(active_path, proxies)
+        if mihomo_mgr.is_binary_available():
+            mihomo_mgr.start_core(active_path)
+
+        return {
+            "status": "ok",
+            "added_count": added_count,
+            "proxies": proxies
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ExportLiveOnlyRequest(BaseModel):
+    live_names: List[str]
+
+
+@app.post("/api/export/live-only")
+async def export_live_only(req: ExportLiveOnlyRequest):
+    active_path = resolve_active_file()
+    if not active_path or not os.path.exists(active_path):
+        raise HTTPException(status_code=404, detail="No active config file found")
+
+    live_set = set(req.live_names)
+    if not live_set:
+        raise HTTPException(status_code=400, detail="Daftar node aktif kosong, lakukan test terlebih dahulu")
+
+    data = yaml_mgr.load_config(active_path)
+    all_proxies = data.get("proxies", [])
+    data["proxies"] = [p for p in all_proxies if p.get("name") in live_set]
+
+    # Clean groups
+    groups = data.get("proxy-groups", [])
+    for group in groups:
+        if "proxies" in group and isinstance(group["proxies"], list):
+            # Keep group names like AUTO-BESTPING, but filter node names
+            retained = []
+            for item in group["proxies"]:
+                if item in ("AUTO-BESTPING", "AUTO-FALLBACK", "LOAD-BALANCE", "MANUAL-LIVE") or item in live_set:
+                    retained.append(item)
+            group["proxies"] = retained
+
+    clean_yaml = yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    base_name = os.path.splitext(os.path.basename(active_path))[0]
+    out_filename = f"{base_name}_LIVE_ONLY.yaml"
+
+    return HTMLResponse(
+        content=clean_yaml,
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": f'attachment; filename="{out_filename}"'}
+    )
+

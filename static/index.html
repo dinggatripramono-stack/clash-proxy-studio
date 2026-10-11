@@ -49,17 +49,26 @@
     <!-- Top Action Ribbon -->
     <section class="action-ribbon">
       <div class="ribbon-left">
+        <button type="button" id="btnNewConfig" class="btn-cyan btn-glow" title="Buat file konfigurasi YAML baru dari paste link akun">
+          <span class="btn-icon-symbol">✨</span> Buat Config Baru
+        </button>
+        <button type="button" id="btnImportLinks" class="btn-success" title="Paste link akun baru ke konfigurasi aktif">
+          <span class="btn-icon-symbol">📥</span> Paste Akun Baru
+        </button>
         <button type="button" id="btnTestAll" class="btn-primary btn-glow">
           <span class="btn-icon-symbol">⚡</span> TEST ALL NODES
         </button>
-        <button type="button" id="btnAddProxy" class="btn-success">
-          <span class="btn-icon-symbol">➕</span> Add Node
+        <button type="button" id="btnExportLiveOnly" class="btn-emerald" disabled title="Export hanya node yang lolos tes (hidup/aktif)">
+          <span class="btn-icon-symbol">⚡</span> Export Live Only
+        </button>
+        <button type="button" id="btnAddProxy" class="btn-secondary" title="Tambah proxy secara manual">
+          <span class="btn-icon-symbol">➕</span> Manual
         </button>
         <button type="button" id="btnBulkReplace" class="btn-secondary">
           <span class="btn-icon-symbol">🔀</span> Bulk Bug Host
         </button>
         <button type="button" id="btnPurgeDead" class="btn-danger" disabled>
-          <span class="btn-icon-symbol">🧹</span> Purge Dead Nodes
+          <span class="btn-icon-symbol">🧹</span> Purge Dead
         </button>
       </div>
 
@@ -75,8 +84,8 @@
         <button type="button" id="btnRawYaml" class="btn-outline">
           <span class="btn-icon-symbol">📝</span> Edit Raw YAML
         </button>
-        <a id="btnDownloadYaml" href="/api/export/download" class="btn-outline" download>
-          <span class="btn-icon-symbol">💾</span> Export YAML
+        <a id="btnDownloadYaml" href="/api/export/download" class="btn-outline" download title="Export seluruh konfigurasi YAML">
+          <span class="btn-icon-symbol">💾</span> Export All YAML
         </a>
       </div>
     </section>
@@ -294,6 +303,92 @@
       <div class="modal-footer">
         <button type="button" class="btn-secondary" id="btnCancelBulkModal">Cancel</button>
         <button type="button" class="btn-primary" id="btnApplyBulk">Apply Replacement</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Buat File YAML Baru -->
+  <div id="newConfigModal" class="modal-overlay hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3>✨ Buat File Konfigurasi Clash YAML Baru</h3>
+        <button type="button" class="btn-close" id="btnCloseNewConfigModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Paste baris link akun (Trojan / Vless / Vmess). Setiap akun akan otomatis dipecah menjadi <strong>2 metode: Bolak-Balik &amp; Wildcard</strong> lengkap dengan group <code>AUTO-SELECT</code>, <code>AUTO-BESTPING</code>, <code>AUTO-FALLBACK</code>, <code>LOAD-BALANCE</code>, dan <code>MANUAL-LIVE</code>.
+        </p>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>Nama File YAML Baru</label>
+            <input type="text" id="newConfigName" placeholder="Contoh: Telkomsel_V7_LIVE.yaml" value="Telkomsel_NEW.yaml">
+          </div>
+          <div class="form-group flex-1">
+            <label>Bug Host / Server Target</label>
+            <input type="text" id="newConfigBugHost" value="support.zoom.us" placeholder="e.g. support.zoom.us">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Paste Link Akun (1 Akun Per Baris)</label>
+          <textarea id="newConfigLinks" rows="7" class="code-editor" placeholder="trojan://password@server:443?security=tls&type=ws&path=%2Ftrojan&host=server&sni=server#(dingga) LEASEWEB&#10;trojan://password@server2:443?security=tls&type=ws&path=%2Ftrojan&host=server2&sni=server2#(dingga) NUSA3&#10;vless://uuid@server3:443?..."></textarea>
+        </div>
+
+        <div class="form-checkboxes">
+          <label class="checkbox-label">
+            <input type="checkbox" id="newConfigDualMode" checked>
+            <span>Generate Dual Mode (Otomatis buat varian <strong>BOLAK-BALIK</strong> &amp; <strong>WILDCARD</strong>)</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="newConfigAutoTest" checked>
+            <span>Langsung Jalankan Test Ping Otomatis setelah file dibuat</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="btnCancelNewConfigModal">Batal</button>
+        <button type="button" class="btn-cyan btn-glow" id="btnSubmitNewConfig">🚀 Buat File &amp; Test Live</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Paste Akun ke File Aktif -->
+  <div id="importLinksModal" class="modal-overlay hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3>📥 Paste &amp; Tambahkan Akun ke Konfigurasi Aktif</h3>
+        <button type="button" class="btn-close" id="btnCloseImportModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Tambahkan link akun ke konfigurasi yang sedang aktif saat ini (<span id="importTargetFilename" class="text-accent font-mono">-</span>). Akun baru otomatis masuk ke seluruh Proxy Group.
+        </p>
+
+        <div class="form-group">
+          <label>Bug Host / Server Target</label>
+          <input type="text" id="importBugHost" value="support.zoom.us" placeholder="e.g. support.zoom.us">
+        </div>
+
+        <div class="form-group">
+          <label>Paste Link Akun (1 Akun Per Baris)</label>
+          <textarea id="importLinksText" rows="6" class="code-editor" placeholder="trojan://...&#10;vless://...&#10;vmess://..."></textarea>
+        </div>
+
+        <div class="form-checkboxes">
+          <label class="checkbox-label">
+            <input type="checkbox" id="importDualMode" checked>
+            <span>Generate Dual Mode (Otomatis buat <strong>BOLAK-BALIK</strong> &amp; <strong>WILDCARD</strong>)</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="importAutoTest" checked>
+            <span>Langsung Test Ping setelah akun ditambahkan</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="btnCancelImportModal">Batal</button>
+        <button type="button" class="btn-success" id="btnSubmitImport">📥 Tambahkan &amp; Test</button>
       </div>
     </div>
   </div>
