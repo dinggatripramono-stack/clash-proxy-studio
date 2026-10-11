@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Mihomo Binary (auto-downloaded via download_core.py)
+bin/
+core/workdir/
+
+# Backups & Temp files
+backups/*.bak*
+*.tmp*
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+
+# IDE / OS files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini

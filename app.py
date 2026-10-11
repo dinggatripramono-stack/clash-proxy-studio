@@ -1,0 +1,455 @@
+import os
+import glob
+import json
+import yaml
+import asyncio
+from typing import Dict, List, Any, Optional
+from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from core.yaml_handler import YamlConfigManager
+from core.mihomo_manager import MihomoManager
+
+app = FastAPI(title="Clash Live Proxy Studio PC", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Base Paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BIN_PATH = os.path.join(BASE_DIR, "bin", "mihomo.exe")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+BACKUPS_DIR = os.path.join(BASE_DIR, "backups")
+DEFAULT_CONFIG_DIRS = list(dict.fromkeys([
+    os.path.normpath(r"C:\Users\ZAVIER\OneDrive\CONFIG"),
+    os.path.normpath(r"C:\Users\admin\OneDrive\CONFIG"),
+    os.path.normpath(os.path.join(os.path.expanduser("~"), "OneDrive", "CONFIG")),
+    os.path.normpath(os.path.join(BASE_DIR, "configs")),
+]))
+
+def find_default_primary_file() -> str:
+    candidates = [
+        r"C:\Users\ZAVIER\OneDrive\CONFIG\Telkomsel_V6_LIVE_ONLY.yaml",
+        r"C:\Users\admin\OneDrive\CONFIG\Telkomsel_V6_LIVE_ONLY.yaml",
+        os.path.join(os.path.expanduser("~"), "OneDrive", "CONFIG", "Telkomsel_V6_LIVE_ONLY.yaml"),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return os.path.normpath(c)
+    return ""
+
+DEFAULT_PRIMARY_FILE = find_default_primary_file()
+
+# Managers
+yaml_mgr = YamlConfigManager(backup_dir=BACKUPS_DIR)
+mihomo_mgr = MihomoManager(
+    binary_path=BIN_PATH,
+    work_dir=os.path.join(BASE_DIR, "core", "workdir"),
+    controller_port=19090,
+    mixed_port=17890
+)
+
+# Active state
+current_file_path = DEFAULT_PRIMARY_FILE if os.path.exists(DEFAULT_PRIMARY_FILE) else ""
+
+# Ensure static dir exists
+os.makedirs(STATIC_DIR, exist_ok=True)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+def resolve_active_file() -> str:
+    global current_file_path
+    if current_file_path and os.path.exists(current_file_path):
+        return current_file_path
+
+    # Try default file
+    if os.path.exists(DEFAULT_PRIMARY_FILE):
+        current_file_path = DEFAULT_PRIMARY_FILE
+        return current_file_path
+
+    # Search in default dirs
+    for d in DEFAULT_CONFIG_DIRS:
+        if os.path.exists(d):
+            matches = glob.glob(os.path.join(d, "*.yaml")) + glob.glob(os.path.join(d, "*.yml"))
+            if matches:
+                current_file_path = matches[0]
+                return current_file_path
+
+    return ""
+
+
+@app.on_event("startup")
+async def startup_event():
+    active_path = resolve_active_file()
+    if active_path and mihomo_mgr.is_binary_available():
+        try:
+            mihomo_mgr.start_core(active_path)
+            print(f"[Clash Studio] Mihomo core started with config: {active_path}")
+        except Exception as e:
+            print(f"[Clash Studio] Warning: Could not auto-start Mihomo core: {e}")
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    mihomo_mgr.stop_core()
+    print("[Clash Studio] Core stopped.")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_index():
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse("<h2>Clash Live Proxy Studio</h2><p>Static UI loading...</p>")
+
+
+@app.get("/api/configs/list")
+async def list_configs():
+    active_path = resolve_active_file()
+    configs = []
+    seen = set()
+
+    search_dirs = []
+    for d in DEFAULT_CONFIG_DIRS:
+        if os.path.exists(d) and d not in search_dirs:
+            search_dirs.append(d)
+
+    for d in search_dirs:
+        pattern = os.path.join(d, "*.y*ml")
+        for f in glob.glob(pattern):
+            norm = os.path.abspath(f)
+            if norm in seen:
+                continue
+            seen.add(norm)
+            try:
+                stat = os.stat(norm)
+                # Count proxies quickly
+                p_count = 0
+                try:
+                    with open(norm, "r", encoding="utf-8") as fh:
+                        content = fh.read()
+                        if "proxies:" in content:
+                            parsed = yaml.safe_load(content)
+                            p_count = len(parsed.get("proxies", [])) if isinstance(parsed, dict) else 0
+                except Exception:
+                    p_count = 0
+
+                configs.append({
+                    "name": os.path.basename(norm),
+                    "path": norm,
+                    "size_kb": round(stat.st_size / 1024, 2),
+                    "mtime": stat.st_mtime,
+                    "proxy_count": p_count,
+                    "is_active": norm.lower() == active_path.lower()
+                })
+            except Exception:
+                pass
+
+    return {"configs": configs, "active_path": active_path}
+
+
+class SelectConfigRequest(BaseModel):
+    path: str
+
+@app.post("/api/configs/select")
+async def select_config(req: SelectConfigRequest):
+    global current_file_path
+    if not os.path.exists(req.path):
+        raise HTTPException(status_code=404, detail=f"File not found: {req.path}")
+
+    current_file_path = req.path
+    # Reload mihomo core with this config
+    success = False
+    error_msg = None
+    if mihomo_mgr.is_binary_available():
+        try:
+            success = mihomo_mgr.start_core(current_file_path)
+        except Exception as e:
+            error_msg = str(e)
+
+    return {
+        "status": "ok",
+        "active_path": current_file_path,
+        "core_restarted": success,
+        "core_error": error_msg
+    }
+
+
+@app.get("/api/configs/current")
+async def get_current_config():
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration file available")
+
+    try:
+        data = yaml_mgr.load_config(active_path)
+        return {
+            "path": active_path,
+            "filename": os.path.basename(active_path),
+            "proxies": data.get("proxies", []),
+            "proxy_groups": [g.get("name") for g in data.get("proxy-groups", []) if isinstance(g, dict)],
+            "mode": data.get("mode", "rule"),
+            "core_active": mihomo_mgr.active
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse config: {str(e)}")
+
+
+@app.get("/api/configs/raw")
+async def get_raw_yaml():
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration file loaded")
+    content = yaml_mgr.read_raw_yaml(active_path)
+    return {"path": active_path, "content": content}
+
+
+class SaveRawRequest(BaseModel):
+    content: str
+
+@app.post("/api/configs/raw")
+async def save_raw_yaml(req: SaveRawRequest):
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration file loaded")
+
+    try:
+        yaml_mgr.save_raw_yaml(active_path, req.content)
+        # Reload core
+        reloaded = False
+        if mihomo_mgr.is_binary_available():
+            try:
+                reloaded = mihomo_mgr.start_core(active_path)
+            except Exception:
+                pass
+        return {"status": "ok", "message": "Saved successfully", "core_reloaded": reloaded}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class AddProxyRequest(BaseModel):
+    proxy: Dict[str, Any]
+    target_groups: Optional[List[str]] = None
+
+@app.post("/api/proxies/add")
+async def add_proxy(req: AddProxyRequest):
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration file loaded")
+
+    try:
+        yaml_mgr.add_proxy(active_path, req.proxy, req.target_groups)
+        if mihomo_mgr.is_binary_available():
+            mihomo_mgr.start_core(active_path)
+        return {"status": "ok", "message": f"Proxy '{req.proxy.get('name')}' added successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class UpdateProxyRequest(BaseModel):
+    original_name: str
+    proxy: Dict[str, Any]
+
+@app.put("/api/proxies/update")
+async def update_proxy(req: UpdateProxyRequest):
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration file loaded")
+
+    try:
+        yaml_mgr.update_proxy(active_path, req.original_name, req.proxy)
+        if mihomo_mgr.is_binary_available():
+            mihomo_mgr.start_core(active_path)
+        return {"status": "ok", "message": f"Proxy '{req.original_name}' updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/proxies/{name}")
+async def delete_proxy(name: str):
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration file loaded")
+
+    try:
+        yaml_mgr.delete_proxy(active_path, name)
+        if mihomo_mgr.is_binary_available():
+            mihomo_mgr.start_core(active_path)
+        return {"status": "ok", "message": f"Proxy '{name}' deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/proxies/duplicate/{name}")
+async def duplicate_proxy(name: str):
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration file loaded")
+
+    try:
+        data = yaml_mgr.load_config(active_path)
+        proxies = data.get("proxies", [])
+        target = next((p for p in proxies if p.get("name") == name), None)
+        if not target:
+            raise HTTPException(status_code=404, detail=f"Proxy '{name}' not found")
+
+        # Create copy
+        copy_proxy = json.loads(json.dumps(target))
+        copy_proxy["name"] = f"{name}-COPY"
+        # Find unique name if exists
+        counter = 1
+        while any(p.get("name") == copy_proxy["name"] for p in proxies):
+            copy_proxy["name"] = f"{name}-COPY-{counter}"
+            counter += 1
+
+        yaml_mgr.add_proxy(active_path, copy_proxy)
+        if mihomo_mgr.is_binary_available():
+            mihomo_mgr.start_core(active_path)
+        return {"status": "ok", "new_name": copy_proxy["name"]}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class BulkReplaceRequest(BaseModel):
+    old_val: str
+    new_val: str
+    scope: str = "server"  # 'server', 'sni', 'host_header', or 'all'
+
+@app.post("/api/proxies/bulk-replace-bug")
+async def bulk_replace_bug(req: BulkReplaceRequest):
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration file loaded")
+
+    try:
+        count = yaml_mgr.bulk_replace_bug(active_path, req.old_val, req.new_val, req.scope)
+        if count > 0 and mihomo_mgr.is_binary_available():
+            mihomo_mgr.start_core(active_path)
+        return {"status": "ok", "replaced_count": count}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class PurgeDeadRequest(BaseModel):
+    dead_names: List[str]
+
+@app.post("/api/proxies/purge-dead")
+async def purge_dead(req: PurgeDeadRequest):
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration file loaded")
+
+    try:
+        count = yaml_mgr.purge_dead_proxies(active_path, req.dead_names)
+        if count > 0 and mihomo_mgr.is_binary_available():
+            mihomo_mgr.start_core(active_path)
+        return {"status": "ok", "purged_count": count}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class TestProxyRequest(BaseModel):
+    name: str
+    test_url: str = "http://www.gstatic.com/generate_204"
+    timeout_ms: int = 4000
+
+@app.post("/api/test/proxy")
+async def test_proxy(req: TestProxyRequest):
+    if not mihomo_mgr.active:
+        active_path = resolve_active_file()
+        if active_path:
+            mihomo_mgr.start_core(active_path)
+
+    result = mihomo_mgr.test_single_proxy(req.name, req.test_url, req.timeout_ms)
+    return result
+
+
+class TestAllRequest(BaseModel):
+    test_url: str = "http://www.gstatic.com/generate_204"
+    timeout_ms: int = 4000
+
+@app.post("/api/test/all")
+async def test_all_proxies(req: TestAllRequest):
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration loaded")
+
+    if not mihomo_mgr.active:
+        mihomo_mgr.start_core(active_path)
+
+    data = yaml_mgr.load_config(active_path)
+    proxies = data.get("proxies", [])
+    names = [p.get("name") for p in proxies if p.get("name")]
+
+    results = mihomo_mgr.test_all_proxies(names, req.test_url, req.timeout_ms)
+    return {"results": results, "total": len(names)}
+
+
+@app.get("/api/test/stream")
+async def stream_test_all(
+    test_url: str = "http://www.gstatic.com/generate_204",
+    timeout_ms: int = 4000
+):
+    """Server-Sent Events (SSE) live streaming testing of all nodes."""
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=404, detail="No configuration loaded")
+
+    if not mihomo_mgr.active:
+        mihomo_mgr.start_core(active_path)
+
+    data = yaml_mgr.load_config(active_path)
+    proxies = data.get("proxies", [])
+    names = [p.get("name") for p in proxies if p.get("name")]
+
+    async def event_generator():
+        yield f"data: {json.dumps({'type': 'init', 'total': len(names)})}\n\n"
+        
+        # Test in small batches to preserve live feedback
+        for name in names:
+            loop = asyncio.get_event_loop()
+            res = await loop.run_in_executor(None, mihomo_mgr.test_single_proxy, name, test_url, timeout_ms)
+            yield f"data: {json.dumps({'type': 'result', 'data': res})}\n\n"
+            await asyncio.sleep(0.05)
+
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/api/system/status")
+async def get_system_status():
+    status = mihomo_mgr.get_status()
+    status["current_file"] = current_file_path
+    return status
+
+
+@app.post("/api/system/restart-core")
+async def restart_core():
+    active_path = resolve_active_file()
+    if not active_path:
+        raise HTTPException(status_code=400, detail="No active config file")
+
+    success = mihomo_mgr.start_core(active_path)
+    return {"status": "ok", "active": success}
+
+
+@app.get("/api/export/download")
+async def download_config():
+    active_path = resolve_active_file()
+    if not active_path or not os.path.exists(active_path):
+        raise HTTPException(status_code=404, detail="Config file not found")
+    return FileResponse(
+        active_path,
+        media_type="application/x-yaml",
+        filename=os.path.basename(active_path)
+    )

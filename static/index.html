@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clash Live Proxy Studio PC</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="obsidian-theme">
+  <!-- Top Navigation Bar -->
+  <header class="top-nav">
+    <div class="brand-container">
+      <div class="brand-logo">
+        <span class="lightning-bolt">⚡</span>
+      </div>
+      <div class="brand-text">
+        <div class="brand-title">CLASH LIVE PROXY STUDIO</div>
+        <div class="brand-sub">PC PROXY AUDITOR & CONFIG MANAGER <span class="badge-apex">PRO PC</span></div>
+      </div>
+    </div>
+
+    <!-- Active Config Selector -->
+    <div class="config-selector-wrapper">
+      <label class="nav-label">ACTIVE CONFIG:</label>
+      <div class="custom-select-box">
+        <select id="configSelect" title="Select Clash Configuration">
+          <option value="">Loading configs...</option>
+        </select>
+        <button id="btnReloadConfig" class="btn-icon" title="Reload configuration list">🔄</button>
+      </div>
+    </div>
+
+    <!-- System Core Status -->
+    <div class="nav-actions">
+      <div class="core-status-pill" id="coreStatusPill" title="Mihomo Meta Isolated Core Status">
+        <span class="status-dot green pulse" id="coreDot"></span>
+        <span class="status-text" id="coreText">CORE ACTIVE :19090</span>
+      </div>
+      <button id="btnRestartCore" class="btn-secondary btn-sm" title="Restart Isolated Test Core">Restart Core</button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-layout">
+    <!-- Top Action Ribbon -->
+    <section class="action-ribbon">
+      <div class="ribbon-left">
+        <button id="btnTestAll" class="btn-primary btn-glow">
+          <span class="btn-icon-symbol">⚡</span> TEST ALL NODES
+        </button>
+        <button id="btnAddProxy" class="btn-success">
+          <span class="btn-icon-symbol">➕</span> Add Node
+        </button>
+        <button id="btnBulkReplace" class="btn-secondary">
+          <span class="btn-icon-symbol">🔀</span> Bulk Bug Host
+        </button>
+        <button id="btnPurgeDead" class="btn-danger" disabled>
+          <span class="btn-icon-symbol">🧹</span> Purge Dead Nodes
+        </button>
+      </div>
+
+      <div class="ribbon-right">
+        <div class="test-target-box">
+          <span class="text-muted">Target:</span>
+          <select id="testTargetUrl">
+            <option value="http://www.gstatic.com/generate_204">Google 204 (gstatic)</option>
+            <option value="https://cp.cloudflare.com/generate_204">Cloudflare 204</option>
+            <option value="http://www.google.com/generate_204">Google HTTP</option>
+          </select>
+        </div>
+        <button id="btnRawYaml" class="btn-outline">
+          <span class="btn-icon-symbol">📝</span> Edit Raw YAML
+        </button>
+        <a id="btnDownloadYaml" href="/api/export/download" class="btn-outline" download>
+          <span class="btn-icon-symbol">💾</span> Export YAML
+        </a>
+      </div>
+    </section>
+
+    <!-- Executive HUD Metric Cards -->
+    <section class="hud-metrics">
+      <div class="hud-card">
+        <div class="hud-title">TOTAL PROXIES</div>
+        <div class="hud-value" id="hudTotal">0</div>
+        <div class="hud-sub" id="hudFileName">No file loaded</div>
+      </div>
+      <div class="hud-card card-alive">
+        <div class="hud-title">ALIVE NODES</div>
+        <div class="hud-value text-emerald" id="hudAlive">0</div>
+        <div class="hud-sub" id="hudAlivePercent">0% active</div>
+      </div>
+      <div class="hud-card card-dead">
+        <div class="hud-title">DEAD / TIMEOUT</div>
+        <div class="hud-value text-crimson" id="hudDead">0</div>
+        <div class="hud-sub" id="hudDeadPercent">0% fail</div>
+      </div>
+      <div class="hud-card">
+        <div class="hud-title">AVERAGE PING</div>
+        <div class="hud-value text-cyan" id="hudAvgPing">-- ms</div>
+        <div class="hud-sub">Calculated for alive nodes</div>
+      </div>
+      <div class="hud-card card-best">
+        <div class="hud-title">BEST NODE 🏆</div>
+        <div class="hud-value text-gold" id="hudBestPing">-- ms</div>
+        <div class="hud-sub text-truncate" id="hudBestName">None</div>
+      </div>
+    </section>
+
+    <!-- Testing Progress Bar (Hidden by default) -->
+    <div id="testProgressBarContainer" class="progress-bar-container hidden">
+      <div class="progress-info">
+        <span id="progressStatusText">Testing proxies...</span>
+        <span id="progressCountText">0 / 0</span>
+      </div>
+      <div class="progress-track">
+        <div id="progressBarFill" class="progress-fill" style="width: 0%;"></div>
+      </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <section class="filter-toolbar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Search node name, server, SNI, or protocol...">
+      </div>
+
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filter="all">All (<span id="countTabAll">0</span>)</button>
+        <button class="filter-tab" data-filter="alive">🟢 Alive (<span id="countTabAlive">0</span>)</button>
+        <button class="filter-tab" data-filter="dead">🔴 Dead (<span id="countTabDead">0</span>)</button>
+        <button class="filter-tab" data-filter="untested">⏳ Untested (<span id="countTabUntested">0</span>)</button>
+      </div>
+
+      <div class="sort-box">
+        <span class="text-muted">Sort:</span>
+        <select id="sortSelect">
+          <option value="original">Original Order</option>
+          <option value="ping-asc">⚡ Latency (Fastest First)</option>
+          <option value="ping-desc">🐢 Latency (Slowest First)</option>
+          <option value="name-asc">Alphabetical (A - Z)</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Proxy Node Grid -->
+    <section class="proxy-grid-section">
+      <div id="proxyGrid" class="proxy-grid">
+        <!-- Rendered dynamically -->
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Loading proxy configurations...</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL: Add / Edit Proxy -->
+  <div id="proxyModal" class="modal-overlay hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3 id="modalTitle">Edit Proxy Node</h3>
+        <button class="btn-close" id="btnCloseProxyModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="proxyForm">
+          <input type="hidden" id="editOriginalName">
+
+          <div class="form-row">
+            <div class="form-group col-8">
+              <label>Node Name *</label>
+              <input type="text" id="formName" required placeholder="e.g. ID-NUSA3-BOLAK">
+            </div>
+            <div class="form-group col-4">
+              <label>Protocol Type *</label>
+              <select id="formType">
+                <option value="trojan">trojan</option>
+                <option value="vless">vless</option>
+                <option value="vmess">vmess</option>
+                <option value="ss">shadowsocks</option>
+                <option value="hysteria2">hysteria2</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-8">
+              <label>Server / Bug Host *</label>
+              <input type="text" id="formServer" required placeholder="e.g. support.zoom.us">
+            </div>
+            <div class="form-group col-4">
+              <label>Port *</label>
+              <input type="number" id="formPort" value="443" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-12">
+              <label>Password / UUID *</label>
+              <div class="input-password-wrapper">
+                <input type="text" id="formPassword" required placeholder="UUID or password string">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-8">
+              <label>SNI (Server Name Indication)</label>
+              <input type="text" id="formSni" placeholder="e.g. nusa3.aixxycode.my.id">
+            </div>
+            <div class="form-group col-4">
+              <label>Network</label>
+              <select id="formNetwork">
+                <option value="ws">ws (WebSocket)</option>
+                <option value="grpc">grpc</option>
+                <option value="tcp">tcp</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- WebSocket Options -->
+          <div id="wsOptionsGroup" class="form-fieldset">
+            <div class="fieldset-title">WebSocket Options</div>
+            <div class="form-row">
+              <div class="form-group col-6">
+                <label>WS Path</label>
+                <input type="text" id="formWsPath" placeholder="/trojan or /websocket-trojan">
+              </div>
+              <div class="form-group col-6">
+                <label>Host Header</label>
+                <input type="text" id="formWsHost" placeholder="e.g. nusa3.aixxycode.my.id">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-6 checkbox-group">
+              <label class="custom-checkbox">
+                <input type="checkbox" id="formSkipCert" checked>
+                <span>Skip Cert Verify (allow insecure/self-signed)</span>
+              </label>
+            </div>
+            <div class="form-group col-6 checkbox-group">
+              <label class="custom-checkbox">
+                <input type="checkbox" id="formUdp" checked>
+                <span>Enable UDP</span>
+              </label>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="btnCancelProxyModal">Cancel</button>
+        <button type="button" class="btn-primary" id="btnSaveProxy">Save Proxy</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Bulk Bug Host / SNI Replacer -->
+  <div id="bulkModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Bulk Bug Host / SNI Replacer</h3>
+        <button class="btn-close" id="btnCloseBulkModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Ganti alamat bug host, SNI, atau header host sekaligus di seluruh akun proxy dalam 1 klik. Sangat berguna saat bug operator berganti!
+        </p>
+
+        <div class="form-group">
+          <label>Target Field to Replace</label>
+          <select id="bulkScope">
+            <option value="server">Server (Bug Host) Only</option>
+            <option value="sni">SNI Only</option>
+            <option value="host_header">Host Header Only</option>
+            <option value="all">Replace in ALL (Server, SNI & Host Header)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Old Value (Yang Ingin Diganti)</label>
+          <input type="text" id="bulkOldVal" placeholder="e.g. support.zoom.us">
+        </div>
+
+        <div class="form-group">
+          <label>New Value (Nilai Baru)</label>
+          <input type="text" id="bulkNewVal" placeholder="e.g. v.whatsapp.net">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="btnCancelBulkModal">Cancel</button>
+        <button type="button" class="btn-primary" id="btnApplyBulk">Apply Replacement</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Raw YAML Editor -->
+  <div id="rawModal" class="modal-overlay hidden">
+    <div class="modal-card modal-xl">
+      <div class="modal-header">
+        <h3>Raw YAML Configuration Editor</h3>
+        <button class="btn-close" id="btnCloseRawModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Direct YAML editor. Auto-validated before save with automatic timestamped backup.
+        </p>
+        <textarea id="rawYamlEditor" spellcheck="false" class="code-editor"></textarea>
+      </div>
+      <div class="modal-footer">
+        <span id="rawYamlStatus" class="editor-status text-muted">Ready</span>
+        <button type="button" class="btn-secondary" id="btnCancelRawModal">Close</button>
+        <button type="button" class="btn-primary" id="btnSaveRaw">Save & Reload YAML</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
