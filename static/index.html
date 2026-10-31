@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Clash Live Proxy Studio PC</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=2.1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -157,11 +157,21 @@
       <div class="sort-box">
         <span class="text-muted">Sort:</span>
         <select id="sortSelect">
-          <option value="original">Original Order</option>
+          <option value="original">Original Order (Drag &amp; Drop)</option>
           <option value="ping-asc">⚡ Latency (Fastest First)</option>
           <option value="ping-desc">🐢 Latency (Slowest First)</option>
           <option value="name-asc">Alphabetical (A - Z)</option>
         </select>
+      </div>
+
+      <!-- Quick Auto-Sort to YAML Buttons -->
+      <div class="quick-order-actions">
+        <button type="button" id="btnSortFastestYaml" class="btn-tool-accent" title="Urutkan kartu berdasarkan Ping tercepat dan simpan urutannya langsung ke file YAML">
+          <span class="btn-icon-symbol">⚡</span> Urutkan Tercepat ke YAML
+        </button>
+        <button type="button" id="btnMoveAliveTopYaml" class="btn-tool-emerald" title="Pindahkan semua proxy yang hidup/aktif ke posisi teratas file YAML">
+          <span class="btn-icon-symbol">🟢</span> Node Hidup ke Atas
+        </button>
       </div>
     </section>
 
@@ -427,6 +437,6 @@
   <!-- Notification Toast Container -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=2.1"></script>
 </body>
 </html>

@@ -93,7 +93,27 @@ mihomo_mgr = MihomoManager(
 )
 
 # Active state
-current_file_path = DEFAULT_PRIMARY_FILE if os.path.exists(DEFAULT_PRIMARY_FILE) else ""
+ACTIVE_CONFIG_PATH = os.path.join(BASE_DIR, ".active_config")
+
+def get_saved_active_file() -> str:
+    if os.path.exists(ACTIVE_CONFIG_PATH):
+        try:
+            with open(ACTIVE_CONFIG_PATH, "r", encoding="utf-8") as f:
+                saved = f.read().strip()
+                if saved and os.path.exists(saved):
+                    return os.path.normpath(saved)
+        except Exception:
+            pass
+    return ""
+
+def set_saved_active_file(path: str) -> None:
+    try:
+        with open(ACTIVE_CONFIG_PATH, "w", encoding="utf-8") as f:
+            f.write(os.path.normpath(path))
+    except Exception:
+        pass
+
+current_file_path = get_saved_active_file() or (DEFAULT_PRIMARY_FILE if os.path.exists(DEFAULT_PRIMARY_FILE) else "")
 
 # Ensure static dir exists
 os.makedirs(STATIC_DIR, exist_ok=True)
@@ -103,6 +123,11 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 def resolve_active_file() -> str:
     global current_file_path
     if current_file_path and os.path.exists(current_file_path):
+        return current_file_path
+
+    saved = get_saved_active_file()
+    if saved:
+        current_file_path = saved
         return current_file_path
 
     # Try default file
@@ -203,6 +228,7 @@ async def select_config(req: SelectConfigRequest):
         raise HTTPException(status_code=404, detail=f"File not found: {normalized_path}")
 
     current_file_path = normalized_path
+    set_saved_active_file(current_file_path)
     # Reload mihomo core with this config
     success = False
     error_msg = None
@@ -353,6 +379,38 @@ async def duplicate_proxy(name: str):
         return {"status": "ok", "new_name": copy_proxy["name"]}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class ReorderProxiesRequest(BaseModel):
+    ordered_names: List[str]
+
+
+@app.post("/api/proxies/reorder")
+async def reorder_proxies_endpoint(req: ReorderProxiesRequest):
+    active_path = resolve_active_file()
+    if not active_path or not os.path.exists(active_path):
+        raise HTTPException(status_code=404, detail="No configuration file loaded")
+
+    if not req.ordered_names:
+        raise HTTPException(status_code=400, detail="Daftar urutan nama proxy tidak boleh kosong")
+
+    try:
+        updated_data = yaml_mgr.reorder_proxies(active_path, req.ordered_names)
+        restarted = False
+        if mihomo_mgr.is_binary_available():
+            try:
+                restarted = mihomo_mgr.start_core(active_path)
+            except Exception:
+                pass
+
+        return {
+            "status": "ok",
+            "message": "Urutan proxy berhasil disimpan ke YAML",
+            "ordered_count": len(updated_data.get("proxies", [])),
+            "core_restarted": restarted
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 class BulkReplaceRequest(BaseModel):
@@ -530,6 +588,7 @@ async def create_new_config_endpoint(req: CreateNewConfigRequest):
     try:
         yaml_mgr.create_new_config(target_path, proxies)
         current_file_path = target_path
+        set_saved_active_file(current_file_path)
 
         # Restart core with new file
         core_restarted = False
@@ -695,6 +754,7 @@ async def upload_config_file(file: UploadFile = File(...)):
 
     global current_file_path
     current_file_path = dest_path
+    set_saved_active_file(current_file_path)
 
     core_restarted = False
     if mihomo_mgr.is_binary_available():

@@ -21,3 +21,5 @@ ENV/
 .idea/
 Thumbs.db
 Desktop.ini
+.active_config
+

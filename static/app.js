@@ -238,6 +238,20 @@ document.addEventListener('DOMContentLoaded', () => {
       renderProxies();
     });
 
+    const btnSortFastestYaml = document.getElementById('btnSortFastestYaml');
+    if (btnSortFastestYaml) {
+      btnSortFastestYaml.addEventListener('click', async () => {
+        await handleSortFastestToYaml();
+      });
+    }
+
+    const btnMoveAliveTopYaml = document.getElementById('btnMoveAliveTopYaml');
+    if (btnMoveAliveTopYaml) {
+      btnMoveAliveTopYaml.addEventListener('click', async () => {
+        await handleMoveAliveTopToYaml();
+      });
+    }
+
     // Filter tabs
     document.querySelectorAll('.filter-tab').forEach(tab => {
       tab.addEventListener('click', () => {
@@ -276,7 +290,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const opt = document.createElement('option');
         opt.value = cfg.path;
         opt.textContent = `${cfg.name} (${cfg.proxy_count} proxies, ${cfg.size_kb} KB)`;
-        if (cfg.is_active) opt.selected = true;
+        if (cfg.path.toLowerCase() === state.activePath.toLowerCase() || cfg.is_active) {
+          opt.selected = true;
+        }
         configSelect.appendChild(opt);
       });
     } catch (err) {
@@ -313,6 +329,9 @@ document.addEventListener('DOMContentLoaded', () => {
       state.activePath = data.path;
 
       hudFileName.textContent = data.filename || 'Config Loaded';
+      if (data.path) {
+        configSelect.value = data.path;
+      }
       renderProxies();
       updateHUD();
     } catch (err) {
@@ -463,6 +482,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function getCountryBadge(name, host, sni) {
+    const s = `${name} ${host} ${sni}`.toLowerCase();
+    if (s.includes('sg_') || s.includes('sg-') || s.includes('singapore') || s.includes('leaseweb')) {
+      return '<span class="badge-country sg">🇸🇬 SG</span>';
+    }
+    if (s.includes('id_') || s.includes('id-') || s.includes('indonesia') || s.includes('nusa') || s.includes('t1') || s.includes('dci') || s.includes('ctn') || s.includes('idc7')) {
+      return '<span class="badge-country id">🇮🇩 ID</span>';
+    }
+    return '<span class="badge-country global">🌐 NODE</span>';
+  }
+
   function renderProxies() {
     const list = getFilteredAndSortedProxies();
 
@@ -476,7 +506,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    proxyGrid.innerHTML = list.map(p => {
+    proxyGrid.innerHTML = list.map((p, index) => {
       const name = p.name;
       const test = state.testResults[name];
       const type = (p.type || 'trojan').toLowerCase();
@@ -486,6 +516,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const wsOpts = p['ws-opts'] || {};
       const wsPath = wsOpts.path || '-';
       const hostHeader = (wsOpts.headers && wsOpts.headers.Host) || '-';
+
+      const originalIndex = state.proxies.findIndex(item => item.name === p.name);
+      const displayRank = originalIndex !== -1 ? (originalIndex + 1) : (index + 1);
+      const countryBadge = getCountryBadge(name, server, sni);
 
       let statusClass = 'status-untested';
       let latencyHtml = '<span class="latency-badge untested">⏳ UNTESTED</span>';
@@ -505,11 +539,20 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       return `
-        <div class="proxy-card ${statusClass}" data-name="${escapeHtml(name)}">
+        <div class="proxy-card ${statusClass}" data-name="${escapeHtml(name)}" data-index="${displayRank - 1}" draggable="true">
           <div class="card-header">
-            <div class="node-title-box">
-              <span class="badge-protocol">${type}</span>
-              <div class="node-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+            <div class="card-header-left">
+              <div class="card-drag-handle" title="Tahan & geser kartu ini dengan mouse untuk mengatur urutan file YAML">
+                <span class="drag-icon-symbol">⠿</span>
+                <span class="card-rank-badge">#${displayRank}</span>
+              </div>
+              <div class="node-title-box">
+                <div class="badges-row">
+                  <span class="badge-protocol">${type}</span>
+                  ${countryBadge}
+                </div>
+                <div class="node-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+              </div>
             </div>
             ${latencyHtml}
           </div>
@@ -529,19 +572,21 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
           </div>
 
-          <div class="card-actions">
+          <div class="card-actions" draggable="false">
             <div class="card-action-btns">
-              <button class="btn-card-test btn-action-test" data-name="${escapeHtml(name)}">
+              <button type="button" draggable="false" class="btn-card-test btn-action-test" data-name="${escapeHtml(name)}" title="Test ping node ini">
                 ⚡ Test Ping
               </button>
-              <button class="btn-card-copy btn-action-copy" data-name="${escapeHtml(name)}" title="Salin link akun (trojan://...) untuk dipaste ke file YAML baru">
+              <button type="button" draggable="false" class="btn-card-copy btn-action-copy" data-name="${escapeHtml(name)}" title="Salin link akun (trojan://...) untuk dipaste ke file YAML baru">
                 📋 Copy Link
               </button>
             </div>
-            <div class="card-icon-actions">
-              <button class="btn-icon btn-action-edit" data-name="${escapeHtml(name)}" title="Edit Node">✏️</button>
-              <button class="btn-icon btn-action-dup" data-name="${escapeHtml(name)}" title="Duplicate Node">📑</button>
-              <button class="btn-icon btn-action-del" data-name="${escapeHtml(name)}" title="Delete Node">🗑️</button>
+            <div class="card-icon-actions" draggable="false">
+              <button type="button" draggable="false" class="btn-icon btn-action-move-up" data-name="${escapeHtml(name)}" title="Geser ke Atas (Move Up)" ${displayRank === 1 ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>⬆️</button>
+              <button type="button" draggable="false" class="btn-icon btn-action-move-down" data-name="${escapeHtml(name)}" title="Geser ke Bawah (Move Down)" ${displayRank === state.proxies.length ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>⬇️</button>
+              <button type="button" draggable="false" class="btn-icon btn-action-edit" data-name="${escapeHtml(name)}" title="Edit Node">✏️</button>
+              <button type="button" draggable="false" class="btn-icon btn-action-dup" data-name="${escapeHtml(name)}" title="Duplicate Node">📑</button>
+              <button type="button" draggable="false" class="btn-icon btn-action-del" data-name="${escapeHtml(name)}" title="Delete Node">🗑️</button>
             </div>
           </div>
         </div>
@@ -549,16 +594,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('');
 
     // Attach card event listeners
+    attachCardListeners();
+    attachDragAndDropListeners();
+  }
+
+  function attachCardListeners() {
     proxyGrid.querySelectorAll('.btn-action-test').forEach(btn => {
-      btn.addEventListener('click', () => testSingleProxy(btn.getAttribute('data-name')));
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        testSingleProxy(btn.getAttribute('data-name'));
+      });
     });
 
     proxyGrid.querySelectorAll('.btn-action-copy').forEach(btn => {
-      btn.addEventListener('click', () => copySingleProxyLink(btn.getAttribute('data-name')));
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copySingleProxyLink(btn.getAttribute('data-name'));
+      });
+    });
+
+    proxyGrid.querySelectorAll('.btn-action-move-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        moveProxyPosition(btn.getAttribute('data-name'), -1);
+      });
+    });
+
+    proxyGrid.querySelectorAll('.btn-action-move-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        moveProxyPosition(btn.getAttribute('data-name'), 1);
+      });
     });
 
     proxyGrid.querySelectorAll('.btn-action-edit').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const name = btn.getAttribute('data-name');
         const target = state.proxies.find(p => p.name === name);
         if (target) openProxyModal(target);
@@ -566,12 +637,206 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     proxyGrid.querySelectorAll('.btn-action-dup').forEach(btn => {
-      btn.addEventListener('click', () => duplicateProxy(btn.getAttribute('data-name')));
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        duplicateProxy(btn.getAttribute('data-name'));
+      });
     });
 
     proxyGrid.querySelectorAll('.btn-action-del').forEach(btn => {
-      btn.addEventListener('click', () => deleteProxy(btn.getAttribute('data-name')));
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteProxy(btn.getAttribute('data-name'));
+      });
     });
+  }
+
+  let draggedCardName = null;
+
+  function attachDragAndDropListeners() {
+    const cards = proxyGrid.querySelectorAll('.proxy-card');
+
+    cards.forEach(card => {
+      card.addEventListener('dragstart', (e) => {
+        if (e.target.closest('button, a, input, select')) {
+          e.preventDefault();
+          return;
+        }
+        draggedCardName = card.getAttribute('data-name');
+        card.classList.add('is-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', draggedCardName);
+      });
+
+      card.addEventListener('dragend', () => {
+        card.classList.remove('is-dragging');
+        draggedCardName = null;
+        cards.forEach(c => c.classList.remove('drag-over-before', 'drag-over-after'));
+      });
+
+      card.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const targetName = card.getAttribute('data-name');
+        if (!draggedCardName || draggedCardName === targetName) return;
+
+        const rect = card.getBoundingClientRect();
+        const midX = rect.left + rect.width / 2;
+        card.classList.remove('drag-over-before', 'drag-over-after');
+        if (e.clientX < midX) {
+          card.classList.add('drag-over-before');
+        } else {
+          card.classList.add('drag-over-after');
+        }
+      });
+
+      card.addEventListener('dragleave', (e) => {
+        if (!card.contains(e.relatedTarget)) {
+          card.classList.remove('drag-over-before', 'drag-over-after');
+        }
+      });
+
+      card.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        const targetName = card.getAttribute('data-name');
+        card.classList.remove('drag-over-before', 'drag-over-after');
+        if (!draggedCardName || draggedCardName === targetName) return;
+
+        const rect = card.getBoundingClientRect();
+        const midX = rect.left + rect.width / 2;
+        const insertBefore = e.clientX < midX;
+
+        await executeReorder(draggedCardName, targetName, insertBefore);
+      });
+    });
+  }
+
+  async function executeReorder(draggedName, targetName, insertBefore) {
+    const fromIdx = state.proxies.findIndex(p => p.name === draggedName);
+    if (fromIdx === -1) return;
+
+    const [moved] = state.proxies.splice(fromIdx, 1);
+    let toIdx = state.proxies.findIndex(p => p.name === targetName);
+    if (toIdx === -1) {
+      state.proxies.push(moved);
+    } else {
+      if (!insertBefore) {
+        toIdx += 1;
+      }
+      state.proxies.splice(toIdx, 0, moved);
+    }
+
+    if (state.sortBy !== 'original') {
+      state.sortBy = 'original';
+      sortSelect.value = 'original';
+    }
+
+    renderProxies();
+    updateHUD();
+    await persistOrderToYaml();
+  }
+
+  async function moveProxyPosition(name, direction) {
+    const idx = state.proxies.findIndex(p => p.name === name);
+    if (idx === -1) return;
+
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= state.proxies.length) return;
+
+    const [item] = state.proxies.splice(idx, 1);
+    state.proxies.splice(targetIdx, 0, item);
+
+    if (state.sortBy !== 'original') {
+      state.sortBy = 'original';
+      sortSelect.value = 'original';
+    }
+
+    renderProxies();
+    updateHUD();
+    await persistOrderToYaml();
+  }
+
+  async function persistOrderToYaml() {
+    const orderedNames = state.proxies.map(p => p.name);
+    try {
+      const resp = await fetch('/api/proxies/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ordered_names: orderedNames })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Gagal menyimpan urutan');
+      showToast('✅ Urutan proxy berhasil disimpan ke file YAML!', 'success');
+    } catch (err) {
+      showToast('Error menyimpan urutan: ' + err.message, 'error');
+    }
+  }
+
+  async function handleSortFastestToYaml() {
+    if (state.proxies.length <= 1) return;
+
+    const hasTested = state.proxies.some(p => state.testResults[p.name]);
+    if (!hasTested) {
+      showToast('Jalankan TEST ALL NODES terlebih dahulu untuk mendapatkan data latensi!', 'error');
+      return;
+    }
+
+    const sorted = [...state.proxies].sort((a, b) => {
+      const resA = state.testResults[a.name];
+      const resB = state.testResults[b.name];
+
+      const aliveA = resA && resA.alive ? 1 : 0;
+      const aliveB = resB && resB.alive ? 1 : 0;
+
+      if (aliveA !== aliveB) {
+        return aliveB - aliveA; // alive first
+      }
+
+      if (aliveA === 1) {
+        return (resA.delay || 99999) - (resB.delay || 99999);
+      }
+
+      const untestedA = !resA ? 1 : 0;
+      const untestedB = !resB ? 1 : 0;
+      return untestedB - untestedA;
+    });
+
+    state.proxies = sorted;
+    state.sortBy = 'original';
+    sortSelect.value = 'original';
+    renderProxies();
+    updateHUD();
+    await persistOrderToYaml();
+    showToast('⚡ Urutan node tercepat (Ping terendah) berhasil disimpan ke YAML!', 'success');
+  }
+
+  async function handleMoveAliveTopToYaml() {
+    if (state.proxies.length <= 1) return;
+
+    const hasAlive = state.proxies.some(p => state.testResults[p.name] && state.testResults[p.name].alive);
+    if (!hasAlive) {
+      showToast('Belum ada node yang berstatus LIVE. Jalankan test terlebih dahulu!', 'error');
+      return;
+    }
+
+    const aliveNodes = [];
+    const otherNodes = [];
+
+    state.proxies.forEach(p => {
+      if (state.testResults[p.name] && state.testResults[p.name].alive) {
+        aliveNodes.push(p);
+      } else {
+        otherNodes.push(p);
+      }
+    });
+
+    state.proxies = [...aliveNodes, ...otherNodes];
+    state.sortBy = 'original';
+    sortSelect.value = 'original';
+    renderProxies();
+    updateHUD();
+    await persistOrderToYaml();
+    showToast(`🟢 ${aliveNodes.length} Node hidup berhasil dipindahkan ke urutan teratas YAML!`, 'success');
   }
 
   function getFilteredAndSortedProxies() {

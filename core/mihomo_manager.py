@@ -141,6 +141,15 @@ class MihomoManager:
                 except Exception:
                     pass
 
+            # Cleanly close file streams
+            try:
+                if self.process.stdout:
+                    self.process.stdout.close()
+                if self.process.stderr:
+                    self.process.stderr.close()
+            except Exception:
+                pass
+
             self.process = None
 
         # Purge any zombie process squatting on the controller port

@@ -371,3 +371,65 @@ class YamlConfigManager:
             yaml.dump(new_cfg, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
         return new_cfg
+
+    def reorder_proxies(self, file_path: str, ordered_names: List[str]) -> Dict[str, Any]:
+        """
+        Reorders proxies in the YAML file according to ordered_names,
+        and synchronizes the order across all proxy groups (AUTO-BESTPING, DINGGA-SELECT, etc.)
+        """
+        data = self.load_config(file_path)
+        existing_proxies = data.get("proxies", [])
+        proxy_map = {p.get("name"): p for p in existing_proxies if p.get("name")}
+
+        new_proxies = []
+        seen = set()
+        for name in ordered_names:
+            if name in proxy_map and name not in seen:
+                new_proxies.append(proxy_map[name])
+                seen.add(name)
+
+        # Append any proxies that were not in ordered_names (defensive safety against accidental omission)
+        for p in existing_proxies:
+            p_name = p.get("name")
+            if p_name and p_name not in seen:
+                new_proxies.append(p)
+                seen.add(p_name)
+
+        data["proxies"] = new_proxies
+        actual_ordered_names = [p.get("name") for p in new_proxies]
+        actual_name_set = set(actual_ordered_names)
+
+        # Synchronize proxy groups
+        groups = data.get("proxy-groups", [])
+        for group in groups:
+            g_name = group.get("name")
+            current_group_proxies = group.get("proxies", [])
+            if not isinstance(current_group_proxies, list):
+                continue
+
+            if g_name in ("DINGGA-SELECT", "AUTO-SELECT"):
+                # Preserve special selector options at the front
+                special_options = [
+                    item for item in current_group_proxies
+                    if item in ("AUTO-BESTPING", "AUTO-FALLBACK", "LOAD-BALANCE", "MANUAL-LIVE")
+                ]
+                # Filter individual proxies that exist in actual_ordered_names in the new order
+                individual_proxies = [
+                    name for name in actual_ordered_names
+                    if name in current_group_proxies
+                ]
+                group["proxies"] = special_options + individual_proxies
+            else:
+                # Other groups (AUTO-BESTPING, AUTO-FALLBACK, LOAD-BALANCE, MANUAL-LIVE, etc.)
+                reordered_group_proxies = [
+                    name for name in actual_ordered_names
+                    if name in current_group_proxies
+                ]
+                other_items = [
+                    item for item in current_group_proxies
+                    if item not in actual_name_set
+                ]
+                group["proxies"] = other_items + reordered_group_proxies
+
+        self.save_config(file_path, data)
+        return data

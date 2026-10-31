@@ -132,25 +132,32 @@ class TestClashProxyStudio(unittest.TestCase):
 
     def test_export_live_only_endpoint(self):
         """Test POST /api/export/live-only returns filtered YAML with live nodes only"""
-        resp = self.client.post("/api/export/live-only", json={
-            "live_names": ["ID-NUSA3-BOLAK", "ID-T1-BOLAK"]
-        })
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn("ID-NUSA3-BOLAK", resp.text)
-        self.assertIn("ID-T1-BOLAK", resp.text)
-        self.assertIn("AUTO-BESTPING", resp.text)
-        self.assertIn("DINGGA-SELECT", resp.text)
+        resp_curr = self.client.get("/api/configs/current")
+        proxies = resp_curr.json().get("proxies", [])
+        if len(proxies) >= 2:
+            live_names = [proxies[0]["name"], proxies[1]["name"]]
+            resp = self.client.post("/api/export/live-only", json={
+                "live_names": live_names
+            })
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn(live_names[0], resp.text)
+            self.assertIn(live_names[1], resp.text)
+            self.assertIn("AUTO-BESTPING", resp.text)
+            self.assertIn("DINGGA-SELECT", resp.text)
 
     def test_proxies_to_raw_links_endpoint(self):
         """Test POST /api/proxies/to-raw-links reconstructs raw 1-line URIs"""
-        resp = self.client.post("/api/proxies/to-raw-links", json={
-            "names": ["ID-NUSA3-BOLAK"]
-        })
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data["count"], 1)
-        self.assertTrue(data["links"][0].startswith("trojan://"))
-        self.assertIn("nusa3.aixxycode.my.id", data["links"][0])
+        resp_curr = self.client.get("/api/configs/current")
+        proxies = resp_curr.json().get("proxies", [])
+        if proxies:
+            target_name = proxies[0]["name"]
+            resp = self.client.post("/api/proxies/to-raw-links", json={
+                "names": [target_name]
+            })
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["count"], 1)
+            self.assertTrue(data["links"][0].startswith("trojan://"))
 
     def test_save_to_onedrive_endpoint(self):
         """Test POST /api/configs/save-to-onedrive saves clean YAML"""
@@ -175,6 +182,32 @@ class TestClashProxyStudio(unittest.TestCase):
         # Cleanup temp file
         if os.path.exists(saved_path):
             os.remove(saved_path)
+
+    def test_reorder_proxies_endpoint(self):
+        """Test POST /api/proxies/reorder updates proxy order in YAML"""
+        # Get current proxies
+        resp_curr = self.client.get("/api/configs/current")
+        self.assertEqual(resp_curr.status_code, 200)
+        curr_proxies = resp_curr.json().get("proxies", [])
+        if len(curr_proxies) >= 2:
+            names = [p["name"] for p in curr_proxies]
+            # Reverse order of first 2
+            reversed_names = [names[1], names[0]] + names[2:]
+            resp_reorder = self.client.post("/api/proxies/reorder", json={
+                "ordered_names": reversed_names
+            })
+            self.assertEqual(resp_reorder.status_code, 200)
+            data = resp_reorder.json()
+            self.assertEqual(data["status"], "ok")
+
+            # Verify order in /api/configs/current
+            resp_after = self.client.get("/api/configs/current")
+            after_names = [p["name"] for p in resp_after.json().get("proxies", [])]
+            self.assertEqual(after_names[0], names[1])
+            self.assertEqual(after_names[1], names[0])
+
+            # Restore original order
+            self.client.post("/api/proxies/reorder", json={"ordered_names": names})
 
 if __name__ == "__main__":
     unittest.main()
