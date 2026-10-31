@@ -113,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await fetchConfigs();
     await loadCurrentConfig();
     await checkSystemStatus();
+    setInterval(checkSystemStatus, 10000);
 
     setupEventListeners();
   }
