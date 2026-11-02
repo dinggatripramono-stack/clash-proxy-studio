@@ -269,9 +269,19 @@ class MihomoManager:
         return results
 
     def get_status(self) -> Dict[str, Any]:
+        is_alive = False
+        if self.process is not None and self.process.poll() is None:
+            try:
+                req = urllib.request.Request(f"http://127.0.0.1:{self.controller_port}/proxies")
+                with urllib.request.urlopen(req, timeout=0.8) as resp:
+                    if resp.status == 200:
+                        is_alive = True
+            except Exception:
+                is_alive = self.active
+        self.active = is_alive
         return {
             "binary_available": self.is_binary_available(),
-            "active": self.active and (self.process is not None and self.process.poll() is None),
+            "active": is_alive,
             "pid": self.process.pid if self.process else None,
             "controller_port": self.controller_port,
             "mixed_port": self.mixed_port,
